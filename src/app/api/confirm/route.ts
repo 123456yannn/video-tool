@@ -72,7 +72,8 @@ export async function POST(request: NextRequest) {
     // Process accepted clips
     updateJob(jobId, {
       status: 'processing',
-      currentStep: '预处理中...',
+      pipelineStage: 'preprocessing',
+      currentStep: '防抖 + 曝光修正 + 锐化...',
       progress: 20,
       selectedClips: clips,
     });
@@ -91,8 +92,19 @@ export async function POST(request: NextRequest) {
           hasAudio: job.videoMetadata?.hasAudio || false,
         },
         (step, percent) => {
+          let stage: 'preprocessing' | 'color-grading' | 'outputting' = 'preprocessing';
+          let label = '防抖 + 曝光修正 + 锐化...';
+          if (step.includes('调色') || percent > 40) {
+            stage = 'color-grading';
+            label = '按场景自动调色...';
+          }
+          if (step.includes('输出') || percent > 80) {
+            stage = 'outputting';
+            label = '生成最终片段...';
+          }
           updateJob(jobId, {
-            currentStep: step === 'processing' ? '处理中...' : step,
+            pipelineStage: stage,
+            currentStep: label,
             progress: 20 + Math.round(percent * 0.8),
           });
         }
@@ -102,6 +114,7 @@ export async function POST(request: NextRequest) {
 
       updateJob(jobId, {
         status: 'completed',
+        pipelineStage: 'completed',
         currentStep: '处理完成',
         progress: 100,
         outputFiles,

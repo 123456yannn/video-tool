@@ -125,5 +125,91 @@
     "outputFiles": [],
     "createdAt": "2026-07-22T08:52:02.698Z",
     "updatedAt": "2026-07-22T08:52:02.698Z"
+  },
+  "a95394a2-d94b-423d-af26-98900953eadf": {
+    "id": "a95394a2-d94b-423d-af26-98900953eadf",
+    "fileName": "a95394a2-d94b-423d-af26-98900953eadf.mp4",
+    "originalName": "test_video.mp4",
+    "fileSize": 382992,
+    "status": "ready-for-preview",
+    "progress": 100,
+    "currentStep": "分析完成，等待预览确认",
+    "pipelineStage": "completed",
+    "videoMetadata": {
+      "duration": 10,
+      "width": 1280,
+      "height": 720,
+      "fps": 30,
+      "hasAudio": true,
+      "aspectRatio": "16:9"
+    },
+    "scenes": [
+      {
+        "index": 0,
+        "startTime": 0,
+        "endTime": 10,
+        "duration": 10,
+        "score": 50,
+        "shotType": "dynamic-to-static",
+        "motionLevel": 0.75,
+        "brightness": 124.691,
+        "isLog": true
+      }
+    ],
+    "selectedClips": [
+      {
+        "segmentIndex": 0,
+        "startTime": 0,
+        "duration": 3,
+        "shotType": "dynamic-to-static",
+        "accepted": true
+      }
+    ],
+    "outputFiles": [],
+    "createdAt": "2026-07-22T09:11:03.396Z",
+    "updatedAt": "2026-07-22T09:11:16.584Z"
+  },
+  "c2e25ff9-01aa-4867-b8d3-67bbb9f6f341": {
+    "id": "c2e25ff9-01aa-4867-b8d3-67bbb9f6f341",
+    "fileName": "c2e25ff9-01aa-4867-b8d3-67bbb9f6f341.mp4",
+    "originalName": "test_video.mp4",
+    "fileSize": 382992,
+    "status": "ready-for-preview",
+    "progress": 100,
+    "currentStep": "分析完成，等待预览确认",
+    "pipelineStage": "preview-ready",
+    "videoMetadata": {
+      "duration": 10,
+      "width": 1280,
+      "height": 720,
+      "fps": 30,
+      "hasAudio": true,
+      "aspectRatio": "16:9"
+    },
+    "scenes": [
+      {
+        "index": 0,
+        "startTime": 0,
+        "endTime": 10,
+        "duration": 10,
+        "score": 50,
+        "shotType": "dynamic-to-static",
+        "motionLevel": 0.75,
+        "brightness": 124.691,
+        "isLog": true
+      }
+    ],
+    "selectedClips": [
+      {
+        "segmentIndex": 0,
+        "startTime": 0,
+        "duration": 3,
+        "shotType": "dynamic-to-static",
+        "accepted": true
+      }
+    ],
+    "outputFiles": [],
+    "createdAt": "2026-07-22T09:13:06.357Z",
+    "updatedAt": "2026-07-22T09:13:22.150Z"
   }
 }

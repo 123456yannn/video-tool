@@ -53,15 +53,24 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Job not found' }, { status: 404 });
       }
 
-      // Run analysis synchronously (in production, this should be a background job)
+      // Stage 1: Analyzing
       updateJob(jobId, {
         status: 'analyzing',
-        currentStep: '分析视频内容...',
-        progress: 20,
+        pipelineStage: 'analyzing',
+        currentStep: 'AI 识别镜头类型...',
+        progress: 10,
       });
 
       try {
         const result = analyzeVideo(jobId, job.fileName);
+
+        // Stage 2: Selecting
+        updateJob(jobId, {
+          status: 'selecting',
+          pipelineStage: 'selecting',
+          currentStep: '节选精华 3 秒片段...',
+          progress: 30,
+        });
 
         const selectedClips = result.selectedClips.map((clip) => ({
           segmentIndex: clip.segmentIndex,
@@ -73,6 +82,7 @@ export async function POST(request: NextRequest) {
 
         updateJob(jobId, {
           status: 'ready-for-preview',
+          pipelineStage: 'preview-ready',
           progress: 100,
           currentStep: '分析完成，等待预览确认',
           videoMetadata: result.metadata,

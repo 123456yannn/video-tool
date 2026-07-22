@@ -23,12 +23,49 @@ export const SHOT_TYPE_DIRS: Record<ShotType, string> = {
 
 export type JobStatus =
   | 'uploading'
+  | 'uploaded'
   | 'analyzing'
+  | 'selecting'
+  | 'preprocessing'
+  | 'color-grading'
+  | 'outputting'
   | 'ready-for-preview'
   | 'processing'
   | 'completed'
   | 'failed'
   | 'rejected';
+
+export type PipelineStage =
+  | 'uploaded'
+  | 'analyzing'
+  | 'selecting'
+  | 'preview-ready'
+  | 'preprocessing'
+  | 'color-grading'
+  | 'outputting'
+  | 'completed';
+
+export const PIPELINE_STAGES: { key: PipelineStage; label: string }[] = [
+  { key: 'uploaded', label: '已上传' },
+  { key: 'analyzing', label: '正在分析' },
+  { key: 'selecting', label: '正在选片' },
+  { key: 'preview-ready', label: '等待确认' },
+  { key: 'preprocessing', label: '正在预处理' },
+  { key: 'color-grading', label: '正在调色' },
+  { key: 'outputting', label: '正在输出' },
+  { key: 'completed', label: '已完成' },
+];
+
+export const PIPELINE_STAGE_DESCRIPTIONS: Record<PipelineStage, string> = {
+  uploaded: '等待处理',
+  analyzing: 'AI 正在识别镜头类型、分析画面质量',
+  selecting: '正在节选精华 3 秒片段',
+  'preview-ready': '分析完成，等待预览确认',
+  preprocessing: '防抖稳定 + 曝光修正 + 锐化增强',
+  'color-grading': '按场景类型自动匹配调色预设',
+  outputting: '生成最终 MP4 片段',
+  completed: '处理完成',
+};
 
 export interface SceneSegment {
   index: number;
@@ -54,9 +91,11 @@ export interface Job {
   id: string;
   fileName: string;
   originalName: string;
+  fileSize: number; // bytes
   status: JobStatus;
   progress: number; // 0-100
   currentStep: string;
+  pipelineStage: PipelineStage;
   videoMetadata: {
     duration: number;
     width: number;
@@ -83,17 +122,3 @@ export interface MaterialItem {
   createdAt: string;
   sourceJobId: string;
 }
-
-export interface ProcessingStep {
-  key: string;
-  label: string;
-  status: 'pending' | 'active' | 'done';
-}
-
-export const PROCESSING_STEPS: ProcessingStep[] = [
-  { key: 'analyzing', label: '分析中', status: 'pending' },
-  { key: 'selecting', label: '选片中', status: 'pending' },
-  { key: 'preprocessing', label: '预处理中', status: 'pending' },
-  { key: 'color-grading', label: '调色中', status: 'pending' },
-  { key: 'outputting', label: '输出中', status: 'pending' },
-];
