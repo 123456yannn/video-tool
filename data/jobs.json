@@ -1,0 +1,59 @@
+{
+  "b0170e40-190e-4187-a9ed-f6b78704b48f": {
+    "id": "b0170e40-190e-4187-a9ed-f6b78704b48f",
+    "fileName": "b0170e40-190e-4187-a9ed-f6b78704b48f.mp4",
+    "originalName": "test_video.mp4",
+    "status": "completed",
+    "progress": 100,
+    "currentStep": "处理完成",
+    "videoMetadata": {
+      "duration": 10,
+      "width": 1280,
+      "height": 720,
+      "fps": 30,
+      "hasAudio": true,
+      "aspectRatio": "16:9"
+    },
+    "scenes": [
+      {
+        "index": 0,
+        "startTime": 0,
+        "endTime": 10,
+        "duration": 10,
+        "score": 50,
+        "shotType": "dynamic-to-static",
+        "motionLevel": 0.75,
+        "brightness": 124.691,
+        "isLog": true
+      }
+    ],
+    "selectedClips": [
+      {
+        "segmentIndex": 0,
+        "startTime": 0,
+        "duration": 3,
+        "shotType": "dynamic-to-static",
+        "accepted": true
+      }
+    ],
+    "outputFiles": [
+      "/workspace/projects/data/materials/dynamic-to-static/动态转静态_20260722_001.mp4"
+    ],
+    "createdAt": "2026-07-22T07:01:39.193Z",
+    "updatedAt": "2026-07-22T07:02:21.391Z"
+  },
+  "f683f7ed-36ea-4864-9d74-00fb0a90ed0f": {
+    "id": "f683f7ed-36ea-4864-9d74-00fb0a90ed0f",
+    "fileName": "f683f7ed-36ea-4864-9d74-00fb0a90ed0f.mp4",
+    "originalName": "test_video.mp4",
+    "status": "analyzing",
+    "progress": 0,
+    "currentStep": "上传完成",
+    "videoMetadata": null,
+    "scenes": [],
+    "selectedClips": [],
+    "outputFiles": [],
+    "createdAt": "2026-07-22T07:03:29.447Z",
+    "updatedAt": "2026-07-22T07:03:29.447Z"
+  }
+}

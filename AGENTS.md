@@ -12,54 +12,79 @@
 
 ```
 ├── public/                 # 静态资源
+├── data/                   # 数据存储（运行时生成）
+│   ├── uploads/            # 上传的原始视频
+│   ├── materials/          # 处理后的素材（按类型分类）
+│   │   ├── product-closeup/
+│   │   ├── environment/
+│   │   ├── human/
+│   │   ├── production-line/
+│   │   └── dynamic-to-static/
+│   └── jobs.json           # 任务状态记录
 ├── scripts/                # 构建与启动脚本
-│   ├── build.sh            # 构建脚本
-│   ├── dev.sh              # 开发环境启动脚本
-│   ├── prepare.sh          # 预处理脚本
-│   └── start.sh            # 生产环境启动脚本
 ├── src/
 │   ├── app/                # 页面路由与布局
+│   │   ├── api/            # API 路由
+│   │   │   ├── upload/     # 视频上传
+│   │   │   ├── jobs/       # 任务管理（分析/查询）
+│   │   │   ├── confirm/    # 确认处理
+│   │   │   ├── library/    # 素材库列表
+│   │   │   └── videos/     # 视频文件服务
+│   │   ├── layout.tsx      # 根布局
+│   │   └── page.tsx        # 主页面（SPA 视图切换）
+│   ├── components/         # 前端组件
+│   │   ├── upload-view.tsx       # 上传视图
+│   │   ├── processing-view.tsx   # 处理进度视图
+│   │   ├── preview-view.tsx      # 预览确认视图
+│   │   └── library-view.tsx      # 素材库视图
 │   ├── components/ui/      # Shadcn UI 组件库
-│   ├── hooks/              # 自定义 Hooks
-│   ├── lib/                # 工具库
-│   │   └── utils.ts        # 通用工具函数 (cn)
-│   └── server.ts           # 自定义服务端入口
+│   └── lib/                # 工具库
+│       ├── types.ts        # 类型定义
+│       ├── utils.ts        # 通用工具函数
+│       └── video/          # 视频处理核心模块
+│           ├── constants.ts      # 路径常量与 Job 存储
+│           ├── ffprobe.ts        # FFmpeg/FFprobe 封装
+│           ├── analysis.ts       # 视频分析（场景检测/分类/评分）
+│           ├── color-grading.ts  # 调色预设
+│           └── processing.ts     # 视频处理流水线
 ├── next.config.ts          # Next.js 配置
 ├── package.json            # 项目依赖管理
 └── tsconfig.json           # TypeScript 配置
 ```
 
-- 项目文件（如 app 目录、pages 目录、components 等）默认初始化到 `src/` 目录下。
-
 ## 包管理规范
 
-**仅允许使用 pnpm** 作为包管理器，**严禁使用 npm 或 yarn**。
-**常用命令**：
-- 安装依赖：`pnpm add <package>`
-- 安装开发依赖：`pnpm add -D <package>`
-- 安装所有依赖：`pnpm install`
-- 移除依赖：`pnpm remove <package>`
+**仅允许使用 pnpm** 作为包管理器。
+
+## 核心功能
+
+### 视频处理流水线
+1. **上传** → 保存原始视频到 `data/uploads/`
+2. **分析** → FFmpeg 场景检测 + 帧分析（亮度/运动/色彩）→ 自动分类镜头类型
+3. **选片** → 根据评分选出 1-2 段最佳 3 秒片段
+4. **预处理** → vidstab 防抖 + 曝光修正 + unsharp 锐化
+5. **调色** → 按场景类型自动匹配调色预设
+6. **输出** → 保留原始比例/分辨率/音频，输出 MP4
+
+### 镜头类型分类
+- `product-closeup` 产品特写 → 暖色生活化调色
+- `environment` 环境空镜 → 蓝绿通透调色
+- `human` 人物空镜 → 暖色生活化调色
+- `production-line` 生产线 → 高级冷调调色
+- `dynamic-to-static` 动态转静态 → 自然增强调色
+
+### API 路由
+- `POST /api/upload` - 上传视频文件（multipart/form-data）
+- `GET /api/jobs` - 获取任务列表或单个任务详情（?id=xxx）
+- `POST /api/jobs` - 触发分析（body: {jobId, action:"analyze"}）
+- `POST /api/confirm` - 确认片段并处理（body: {jobId, clips}）
+- `GET /api/library` - 获取素材库列表（?category=xxx）
+- `GET /api/videos` - 提供视频文件流（?file=xxx&category=xxx）
 
 ## 开发规范
 
-### 编码规范
-
-- 默认按 TypeScript `strict` 心智写代码；优先复用当前作用域已声明的变量、函数、类型和导入，禁止引用未声明标识符或拼错变量名。
-- 禁止隐式 `any` 和 `as any`；函数参数、返回值、解构项、事件对象、`catch` 错误在使用前应有明确类型或先完成类型收窄，并清理未使用的变量和导入。
-
-### next.config 配置规范
-
-- 配置的路径不要写死绝对路径，必须使用 path.resolve(__dirname, ...)、import.meta.dirname 或 process.cwd() 动态拼接。
-
-### Hydration 问题防范
-
-1. 严禁在 JSX 渲染逻辑中直接使用 typeof window、Date.now()、Math.random() 等动态数据。**必须使用 'use client' 并配合 useEffect + useState 确保动态内容仅在客户端挂载后渲染**；同时严禁非法 HTML 嵌套（如 <p> 嵌套 <div>）。
-2. **禁止使用 head 标签**，优先使用 metadata，详见文档：https://nextjs.org/docs/app/api-reference/functions/generate-metadata
-   1. 三方 CSS、字体等资源可在 `globals.css` 中顶部通过 `@import` 引入或使用 next/font
-   2. preload, preconnect, dns-prefetch 通过 ReactDOM 的 preload、preconnect、dns-prefetch 方法引入
-   3. json-ld 可阅读 https://nextjs.org/docs/app/guides/json-ld
-
-## UI 设计与组件规范 (UI & Styling Standards)
-
-- 模板默认预装核心组件库 `shadcn/ui`，位于`src/components/ui/`目录下
-- Next.js 项目**必须默认**采用 shadcn/ui 组件、风格和规范，**除非用户指定用其他的组件和规范。**
+- 深色主题 UI，cyan 强调色
+- 前端 SPA 四视图：上传 → 处理 → 预览 → 素材库
+- 后端使用 FFmpeg 进行视频处理
+- 支持 Log/灰度素材自动检测与色彩还原
+- 文件命名规则：`类型_日期_编号.mp4`

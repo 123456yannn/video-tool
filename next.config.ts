@@ -1,8 +1,6 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  // outputFileTracingRoot: path.resolve(__dirname, '../../'),  // Uncomment and add 'import path from "path"' if needed
-  /* config options here */
   allowedDevOrigins: ['*.dev.coze.site'],
   images: {
     remotePatterns: [
@@ -12,6 +10,12 @@ const nextConfig: NextConfig = {
         pathname: '/**',
       },
     ],
+  },
+  // Allow large video file uploads (up to 2GB)
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '2gb',
+    },
   },
 };
 
