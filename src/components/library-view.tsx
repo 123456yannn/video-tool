@@ -7,11 +7,14 @@ import {
   Filter,
   ArrowUpDown,
   RefreshCw,
+  Download,
+  Package,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { SHOT_TYPE_LABELS } from '@/lib/types';
 import type { MaterialItem, ShotType } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import JSZip from 'jszip';
 
 const CATEGORIES: { value: ShotType | 'all'; label: string }[] = [
   { value: 'all', label: '全部' },
@@ -28,6 +31,7 @@ export function LibraryView() {
   const [isLoading, setIsLoading] = useState(true);
   const [playingVideo, setPlayingVideo] = useState<string | null>(null);
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [isDownloading, setIsDownloading] = useState(false);
 
   const fetchMaterials = useCallback(async () => {
     setIsLoading(true);
@@ -67,6 +71,71 @@ export function LibraryView() {
     {} as Record<string, MaterialItem[]>
   );
 
+  const downloadSingle = useCallback(async (item: MaterialItem) => {
+    try {
+      const response = await fetch(item.filePath);
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = item.fileName;
+      link.click();
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      console.error('Download error:', error);
+    }
+  }, []);
+
+  const downloadAll = useCallback(async () => {
+    if (materials.length === 0) return;
+    setIsDownloading(true);
+    try {
+      const zip = new JSZip();
+
+      // Group by category for folder structure
+      const grouped: Record<string, MaterialItem[]> = {};
+      for (const item of materials) {
+        const folderName = item.shotTypeLabel;
+        if (!grouped[folderName]) grouped[folderName] = [];
+        grouped[folderName].push(item);
+      }
+
+      // Fetch all videos and add to zip
+      for (const [folderName, items] of Object.entries(grouped)) {
+        const folder = zip.folder(folderName);
+        if (!folder) continue;
+        for (const item of items) {
+          try {
+            const response = await fetch(item.filePath);
+            const blob = await response.blob();
+            folder.file(item.fileName, blob);
+          } catch (e) {
+            console.error(`Failed to download ${item.fileName}:`, e);
+          }
+        }
+      }
+
+      const content = await zip.generateAsync({ type: 'blob' });
+      const blobUrl = window.URL.createObjectURL(content);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      const now = new Date();
+      const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+      link.download = `素材库_${dateStr}.zip`;
+      link.click();
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      console.error('Batch download error:', error);
+    } finally {
+      setIsDownloading(false);
+    }
+  }, [materials]);
+
+  const formatDate = (iso: string) => {
+    const d = new Date(iso);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
   return (
     <div className="w-full max-w-4xl mx-auto">
       {/* Header */}
@@ -78,6 +147,22 @@ export function LibraryView() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {materials.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-cyan-800 text-cyan-400 hover:bg-cyan-950/50"
+              onClick={downloadAll}
+              disabled={isDownloading}
+            >
+              {isDownloading ? (
+                <div className="w-3.5 h-3.5 border-2 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin mr-1.5" />
+              ) : (
+                <Package className="w-3.5 h-3.5 mr-1.5" />
+              )}
+              全部下载
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"
@@ -134,7 +219,6 @@ export function LibraryView() {
           </p>
         </div>
       ) : activeCategory === 'all' ? (
-        // Grouped view
         <div className="space-y-6">
           {Object.entries(groupedMaterials).map(([label, items]) => (
             <div key={label}>
@@ -154,6 +238,8 @@ export function LibraryView() {
                         playingVideo === item.id ? null : item.id
                       )
                     }
+                    onDownload={() => downloadSingle(item)}
+                    formatDate={formatDate}
                   />
                 ))}
               </div>
@@ -161,7 +247,6 @@ export function LibraryView() {
           ))}
         </div>
       ) : (
-        // Filtered view
         <div className="space-y-1">
           {sortedMaterials.map((item) => (
             <MaterialRow
@@ -171,6 +256,8 @@ export function LibraryView() {
               onPlay={() =>
                 setPlayingVideo(playingVideo === item.id ? null : item.id)
               }
+              onDownload={() => downloadSingle(item)}
+              formatDate={formatDate}
             />
           ))}
         </div>
@@ -183,23 +270,28 @@ function MaterialRow({
   item,
   isPlaying,
   onPlay,
+  onDownload,
+  formatDate,
 }: {
   item: MaterialItem;
   isPlaying: boolean;
   onPlay: () => void;
+  onDownload: () => void;
+  formatDate: (iso: string) => string;
 }) {
   return (
     <div className="group">
       <div
         className={cn(
-          'flex items-center gap-3 p-3 rounded-lg transition-all cursor-pointer',
+          'flex items-center gap-3 p-3 rounded-lg transition-all',
           isPlaying
             ? 'bg-zinc-800 border border-cyan-800/50'
             : 'hover:bg-zinc-900/80 border border-transparent'
         )}
-        onClick={onPlay}
       >
-        <div
+        {/* Play button */}
+        <button
+          onClick={onPlay}
           className={cn(
             'w-8 h-8 rounded flex items-center justify-center shrink-0 transition-colors',
             isPlaying ? 'bg-cyan-600' : 'bg-zinc-800 group-hover:bg-zinc-700'
@@ -211,7 +303,9 @@ function MaterialRow({
               isPlaying ? 'text-white' : 'text-zinc-500'
             )}
           />
-        </div>
+        </button>
+
+        {/* Info */}
         <div className="flex-1 min-w-0">
           <p className="text-sm text-zinc-200 font-mono truncate">
             {item.fileName}
@@ -223,8 +317,20 @@ function MaterialRow({
             <span className="text-xs text-zinc-600">
               {item.duration.toFixed(1)}s
             </span>
+            <span className="text-xs text-zinc-600">
+              {formatDate(item.createdAt)}
+            </span>
           </div>
         </div>
+
+        {/* Download button */}
+        <button
+          onClick={onDownload}
+          className="p-2 rounded-md text-zinc-500 hover:text-cyan-400 hover:bg-zinc-800 transition-colors opacity-0 group-hover:opacity-100"
+          title="下载"
+        >
+          <Download className="w-4 h-4" />
+        </button>
       </div>
 
       {/* Video Player */}

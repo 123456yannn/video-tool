@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useCallback, useState } from 'react';
-import { Upload, Film, X, FileVideo } from 'lucide-react';
+import React, { useCallback, useRef, useState } from 'react';
+import { Upload, Film, X, FileVideo, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -14,6 +14,13 @@ export function UploadView({ onUploadComplete }: UploadViewProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [duplicateDialog, setDuplicateDialog] = useState<{
+    show: boolean;
+    duplicates: File[];
+    newFiles: File[];
+  } | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -25,25 +32,64 @@ export function UploadView({ onUploadComplete }: UploadViewProps) {
     setIsDragging(false);
   }, []);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const droppedFiles = Array.from(e.dataTransfer.files).filter((f) =>
-      ['video/mp4', 'video/quicktime', 'video/mov', 'video/x-msvideo'].includes(
-        f.type
-      ) || f.name.match(/\.(mp4|mov|avi)$/i)
-    );
-    setFiles((prev) => [...prev, ...droppedFiles]);
+  const addFiles = useCallback((newFiles: File[]) => {
+    setError(null);
+    setFiles((prev) => {
+      const existingNames = new Set(prev.map((f) => f.name));
+      const duplicates = newFiles.filter((f) => existingNames.has(f.name));
+      const fresh = newFiles.filter((f) => !existingNames.has(f.name));
+
+      if (duplicates.length > 0) {
+        setDuplicateDialog({ show: true, duplicates, newFiles: fresh });
+        return [...prev, ...fresh];
+      }
+      return [...prev, ...newFiles];
+    });
   }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragging(false);
+      const droppedFiles = Array.from(e.dataTransfer.files).filter(
+        (f) =>
+          ['video/mp4', 'video/quicktime', 'video/mov', 'video/x-msvideo'].includes(f.type) ||
+          f.name.match(/\.(mp4|mov|avi)$/i)
+      );
+      addFiles(droppedFiles);
+    },
+    [addFiles]
+  );
 
   const handleFileSelect = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.files) {
         const selected = Array.from(e.target.files);
-        setFiles((prev) => [...prev, ...selected]);
+        addFiles(selected);
+      }
+      // Reset input value to allow re-selecting the same file
+      if (inputRef.current) {
+        inputRef.current.value = '';
       }
     },
-    []
+    [addFiles]
+  );
+
+  const handleDuplicateConfirm = useCallback(
+    (replace: boolean) => {
+      if (!duplicateDialog) return;
+      if (replace) {
+        // Replace duplicates: remove old ones with same name, add new ones
+        const duplicateNames = new Set(duplicateDialog.duplicates.map((f) => f.name));
+        setFiles((prev) => [
+          ...prev.filter((f) => !duplicateNames.has(f.name)),
+          ...duplicateDialog.duplicates,
+        ]);
+      }
+      // If not replacing, just keep the existing files (duplicates are skipped)
+      setDuplicateDialog(null);
+    },
+    [duplicateDialog]
   );
 
   const removeFile = useCallback((index: number) => {
@@ -55,6 +101,7 @@ export function UploadView({ onUploadComplete }: UploadViewProps) {
 
     setIsUploading(true);
     setUploadProgress(0);
+    setError(null);
 
     try {
       const formData = new FormData();
@@ -62,7 +109,6 @@ export function UploadView({ onUploadComplete }: UploadViewProps) {
         formData.append('videos', file);
       }
 
-      // Simulate progress
       const progressInterval = setInterval(() => {
         setUploadProgress((prev) => Math.min(prev + 10, 90));
       }, 200);
@@ -82,8 +128,10 @@ export function UploadView({ onUploadComplete }: UploadViewProps) {
 
       const data = await response.json();
       onUploadComplete(data.jobIds);
-    } catch (error) {
-      console.error('Upload error:', error);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      setError(message);
+      console.error('Upload error:', err);
     } finally {
       setIsUploading(false);
     }
@@ -109,9 +157,10 @@ export function UploadView({ onUploadComplete }: UploadViewProps) {
             ? 'border-cyan-500 bg-cyan-500/5'
             : 'border-zinc-700 hover:border-zinc-500 bg-zinc-900/50'
         )}
-        onClick={() => document.getElementById('file-input')?.click()}
+        onClick={() => inputRef.current?.click()}
       >
         <input
+          ref={inputRef}
           id="file-input"
           type="file"
           accept="video/mp4,video/quicktime,.mp4,.mov"
@@ -139,13 +188,63 @@ export function UploadView({ onUploadComplete }: UploadViewProps) {
             className="mt-2 border-zinc-700 text-zinc-300 hover:bg-zinc-800"
             onClick={(e) => {
               e.stopPropagation();
-              document.getElementById('file-input')?.click();
+              inputRef.current?.click();
             }}
           >
             选择文件
           </Button>
         </div>
       </div>
+
+      {/* Error Message */}
+      {error && (
+        <div className="w-full flex items-center gap-3 p-3 rounded-lg bg-red-950/50 border border-red-800/50">
+          <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+          <p className="text-sm text-red-300 flex-1">{error}</p>
+          <button
+            onClick={() => setError(null)}
+            className="text-red-400 hover:text-red-200"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Duplicate Dialog */}
+      {duplicateDialog?.show && (
+        <div className="w-full p-4 rounded-lg bg-amber-950/50 border border-amber-800/50">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm text-amber-200 font-medium">
+                发现同名文件
+              </p>
+              <p className="text-xs text-amber-400/80 mt-1">
+                以下文件已存在于上传列表中：
+                {duplicateDialog.duplicates.map((f) => f.name).join('、')}
+              </p>
+              <div className="flex items-center gap-2 mt-3">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-amber-700 text-amber-300 hover:bg-amber-900/50 text-xs"
+                  onClick={() => handleDuplicateConfirm(true)}
+                >
+                  替换并继续
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-amber-400 hover:bg-amber-900/30 text-xs"
+                  onClick={() => handleDuplicateConfirm(false)}
+                >
+                  跳过重复
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* File List */}
       {files.length > 0 && (
@@ -168,11 +267,13 @@ export function UploadView({ onUploadComplete }: UploadViewProps) {
             {files.map((file, index) => (
               <div
                 key={`${file.name}-${index}`}
-                className="flex items-center gap-3 p-3 bg-zinc-900/80 rounded-lg border border-zinc-800"
+                className="flex items-center gap-3 p-3 rounded-lg bg-zinc-900/80 border border-zinc-800"
               >
-                <FileVideo className="w-5 h-5 text-cyan-500 shrink-0" />
+                <div className="w-8 h-8 rounded bg-zinc-800 flex items-center justify-center shrink-0">
+                  <FileVideo className="w-4 h-4 text-zinc-500" />
+                </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-zinc-200 truncate">
+                  <p className="text-sm text-zinc-200 font-mono truncate">
                     {file.name}
                   </p>
                   <p className="text-xs text-zinc-500">
@@ -181,40 +282,30 @@ export function UploadView({ onUploadComplete }: UploadViewProps) {
                 </div>
                 <button
                   onClick={() => removeFile(index)}
-                  className="p-1 hover:bg-zinc-800 rounded transition-colors"
+                  className="p-1 rounded hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300 transition-colors"
                 >
-                  <X className="w-4 h-4 text-zinc-500" />
+                  <X className="w-4 h-4" />
                 </button>
               </div>
             ))}
           </div>
 
-          {/* Upload Progress */}
-          {isUploading && (
-            <div className="w-full bg-zinc-800 rounded-full h-2 overflow-hidden">
-              <div
-                className="h-full bg-cyan-500 transition-all duration-300"
-                style={{ width: `${uploadProgress}%` }}
-              />
-            </div>
-          )}
-
           {/* Upload Button */}
           <Button
-            className="w-full bg-cyan-600 hover:bg-cyan-700 text-white h-12 text-base"
             onClick={handleUpload}
             disabled={isUploading || files.length === 0}
+            className="w-full bg-cyan-600 hover:bg-cyan-700 text-white h-11"
           >
             {isUploading ? (
-              <span className="flex items-center gap-2">
-                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                上传中...
-              </span>
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                上传中 {uploadProgress}%
+              </div>
             ) : (
-              <span className="flex items-center gap-2">
+              <div className="flex items-center gap-2">
                 <Film className="w-4 h-4" />
-                开始处理 ({files.length} 个视频)
-              </span>
+                上传并开始处理
+              </div>
             )}
           </Button>
         </div>

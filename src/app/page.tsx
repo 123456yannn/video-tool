@@ -20,14 +20,18 @@ const NAV_ITEMS: { key: AppView; label: string; icon: React.ElementType }[] = [
 export default function Home() {
   const [currentView, setCurrentView] = useState<AppView>('upload');
   const [currentJobIds, setCurrentJobIds] = useState<string[]>([]);
+  const [hasJobs, setHasJobs] = useState(false);
+  const [hasReadyJobs, setHasReadyJobs] = useState(false);
 
   const handleUploadComplete = useCallback((jobIds: string[]) => {
     setCurrentJobIds(jobIds);
+    setHasJobs(true);
     setCurrentView('processing');
   }, []);
 
   const handleAnalysisComplete = useCallback((jobIds: string[]) => {
     setCurrentJobIds(jobIds);
+    setHasReadyJobs(true);
     setCurrentView('preview');
   }, []);
 
@@ -36,8 +40,11 @@ export default function Home() {
   }, []);
 
   const handleReject = useCallback((jobIds: string[]) => {
-    // Stay on preview with new selections
     setCurrentJobIds(jobIds);
+  }, []);
+
+  const handleNavigate = useCallback((view: AppView) => {
+    setCurrentView(view);
   }, []);
 
   return (
@@ -64,13 +71,13 @@ export default function Home() {
                 const isAccessible =
                   item.key === 'upload' ||
                   item.key === 'library' ||
-                  (item.key === 'processing' && currentJobIds.length > 0) ||
-                  (item.key === 'preview' && currentJobIds.length > 0);
+                  (item.key === 'processing' && hasJobs) ||
+                  (item.key === 'preview' && (hasReadyJobs || hasJobs));
 
                 return (
                   <button
                     key={item.key}
-                    onClick={() => isAccessible && setCurrentView(item.key)}
+                    onClick={() => isAccessible && handleNavigate(item.key)}
                     className={cn(
                       'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-all',
                       isActive
@@ -110,15 +117,6 @@ export default function Home() {
         )}
         {currentView === 'library' && <LibraryView />}
       </main>
-
-      {/* Footer */}
-      <footer className="border-t border-zinc-800/50 py-4 mt-auto">
-        <div className="max-w-6xl mx-auto px-6">
-          <p className="text-xs text-zinc-700 text-center">
-            视频素材处理工具 - 自动分析、剪辑、调色，输出高质量空镜素材
-          </p>
-        </div>
-      </footer>
     </div>
   );
 }

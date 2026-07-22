@@ -211,5 +211,21 @@
     "outputFiles": [],
     "createdAt": "2026-07-22T09:13:06.357Z",
     "updatedAt": "2026-07-22T09:13:22.150Z"
+  },
+  "77e298c3-af46-4409-9802-e574f1b122b4": {
+    "id": "77e298c3-af46-4409-9802-e574f1b122b4",
+    "fileName": "77e298c3-af46-4409-9802-e574f1b122b4.mp4",
+    "originalName": "test_video.mp4",
+    "fileSize": 382992,
+    "status": "uploaded",
+    "progress": 0,
+    "currentStep": "已上传，等待处理",
+    "pipelineStage": "uploaded",
+    "videoMetadata": null,
+    "scenes": [],
+    "selectedClips": [],
+    "outputFiles": [],
+    "createdAt": "2026-07-22T09:40:15.373Z",
+    "updatedAt": "2026-07-22T09:40:15.373Z"
   }
 }
