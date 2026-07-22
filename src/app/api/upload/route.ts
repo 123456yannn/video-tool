@@ -5,6 +5,9 @@ import fs from 'fs';
 import { UPLOADS_DIR, ensureDirs, createJob } from '@/lib/video/constants';
 import type { Job } from '@/lib/types';
 
+// Allow large video file uploads (up to 2GB)
+export const bodySizeLimit = '2gb';
+
 export async function POST(request: NextRequest) {
   try {
     ensureDirs();

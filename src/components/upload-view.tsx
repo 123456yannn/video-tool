@@ -76,7 +76,8 @@ export function UploadView({ onUploadComplete }: UploadViewProps) {
       setUploadProgress(100);
 
       if (!response.ok) {
-        throw new Error('Upload failed');
+        const errorText = await response.text().catch(() => 'Unknown error');
+        throw new Error(`Upload failed (${response.status}): ${errorText}`);
       }
 
       const data = await response.json();
