@@ -80,26 +80,19 @@ export async function POST(request: NextRequest) {
       selectedClips: clips,
     });
 
-    const isLog = job.scenes.some((s: { isLog: boolean }) => s.isLog);
-
     try {
       const result = processClips(
         jobId,
         job.fileName,
         acceptedClips,
-        isLog,
         {
           width: job.videoMetadata?.width || 1920,
           height: job.videoMetadata?.height || 1080,
           hasAudio: job.videoMetadata?.hasAudio || false,
         },
         (step, percent) => {
-          let stage: 'preprocessing' | 'color-grading' | 'outputting' = 'preprocessing';
+          let stage: 'preprocessing' | 'outputting' = 'preprocessing';
           let label = '防抖 + 曝光修正 + 锐化...';
-          if (step.includes('调色') || percent > 40) {
-            stage = 'color-grading';
-            label = '按场景自动调色...';
-          }
           if (step.includes('输出') || percent > 80) {
             stage = 'outputting';
             label = '生成最终片段...';

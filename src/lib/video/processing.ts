@@ -5,7 +5,6 @@ import { v4 as uuidv4 } from 'uuid';
 import type { ShotType, SelectedClip } from '../types';
 import { SHOT_TYPE_LABELS, SHOT_TYPE_DIRS } from '../types';
 import { UPLOADS_DIR, MATERIALS_DIR } from './constants';
-import { getColorGradeFilter } from './color-grading';
 
 function formatDate(): string {
   const d = new Date();
@@ -29,25 +28,19 @@ interface ProcessOptions {
   jobId: string;
   fileName: string;
   clip: SelectedClip;
-  isLog: boolean;
   width: number;
   height: number;
   hasAudio: boolean;
 }
 
 function processSingleClip(opts: ProcessOptions): string {
-  const { jobId, fileName, clip, isLog, hasAudio } = opts;
+  const { jobId, fileName, clip, hasAudio } = opts;
   const inputPath = path.join(UPLOADS_DIR, fileName);
   const category = clip.shotType;
   const seq = getNextSequence(category);
   const dateStr = formatDate();
   const label = SHOT_TYPE_LABELS[category] || category;
-
-  // Use content tags for descriptive file naming
-  const contentSuffix = clip.contentTags && clip.contentTags.length > 0
-    ? `_${clip.contentTags.join('_')}`
-    : '';
-  const outputName = `${label}${contentSuffix}_${dateStr}_${seq}.mp4`;
+  const outputName = `${label}_${dateStr}_${seq}.mp4`;
   const outputDir = path.join(MATERIALS_DIR, SHOT_TYPE_DIRS[category]);
   const outputPath = path.join(outputDir, outputName);
 
@@ -70,7 +63,7 @@ function processSingleClip(opts: ProcessOptions): string {
     // Stabilization may fail, continue without it
   }
 
-  // Build filter chain
+  // Build filter chain - basic processing only (no color grading)
   const filterParts: string[] = [];
 
   // Pass 2: Stabilization transform
@@ -80,17 +73,7 @@ function processSingleClip(opts: ProcessOptions): string {
     );
   }
 
-  // Exposure correction
-  filterParts.push('eq=brightness=0.02');
-
-  // Sharpening
-  filterParts.push('unsharp=5:5:0.8:5:5:0.4');
-
-  // Color grading
-  const colorFilter = getColorGradeFilter(clip.shotType, isLog);
-  filterParts.push(colorFilter);
-
-  const videoFilter = filterParts.join(',');
+  const videoFilter = filterParts.length > 0 ? filterParts.join(',') : 'null';
 
   // Pass 2: Main processing
   const audioFlag = hasAudio ? '-c:a copy' : '-an';
@@ -120,7 +103,6 @@ export function processClips(
   jobId: string,
   fileName: string,
   clips: SelectedClip[],
-  isLog: boolean,
   metadata: { width: number; height: number; hasAudio: boolean },
   onProgress?: (step: string, percent: number) => void
 ): ProcessResult {
@@ -138,7 +120,6 @@ export function processClips(
         jobId,
         fileName,
         clip,
-        isLog,
         width: metadata.width,
         height: metadata.height,
         hasAudio: metadata.hasAudio,

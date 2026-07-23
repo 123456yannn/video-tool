@@ -41,7 +41,6 @@ export type PipelineStage =
   | 'selecting'
   | 'preview-ready'
   | 'preprocessing'
-  | 'color-grading'
   | 'outputting'
   | 'completed';
 
@@ -51,7 +50,6 @@ export const PIPELINE_STAGES: { key: PipelineStage; label: string }[] = [
   { key: 'selecting', label: '正在选片' },
   { key: 'preview-ready', label: '等待确认' },
   { key: 'preprocessing', label: '正在预处理' },
-  { key: 'color-grading', label: '正在调色' },
   { key: 'outputting', label: '正在输出' },
   { key: 'completed', label: '已完成' },
 ];
@@ -62,7 +60,6 @@ export const PIPELINE_STAGE_DESCRIPTIONS: Record<PipelineStage, string> = {
   selecting: '正在节选精华 3 秒片段',
   'preview-ready': '分析完成，等待预览确认',
   preprocessing: '防抖稳定 + 曝光修正 + 锐化增强',
-  'color-grading': '按场景类型自动匹配调色预设',
   outputting: '生成最终 MP4 片段',
   completed: '处理完成',
 };
