@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getJob, updateJob } from '@/lib/video/constants';
+import { getJob, updateJob, UPLOADS_DIR } from '@/lib/video/constants';
 import { processClips } from '@/lib/video/processing';
 import type { SelectedClip } from '@/lib/types';
+import path from 'path';
+import fs from 'fs';
 
 export async function POST(request: NextRequest) {
   try {
@@ -119,6 +121,17 @@ export async function POST(request: NextRequest) {
         progress: 100,
         outputFiles,
       });
+
+      // Cleanup: delete uploaded file to save disk space
+      try {
+        const uploadPath = path.join(UPLOADS_DIR, job.fileName);
+        if (fs.existsSync(uploadPath)) {
+          fs.unlinkSync(uploadPath);
+          console.log(`Cleaned up uploaded file: ${uploadPath}`);
+        }
+      } catch (cleanupError) {
+        console.warn('Failed to cleanup uploaded file:', cleanupError);
+      }
 
       return NextResponse.json({
         success: true,
