@@ -72,6 +72,34 @@ export function LibraryView() {
     {} as Record<string, MaterialItem[]>
   );
 
+  // Download status tracking via localStorage
+  const [downloadedIds, setDownloadedIds] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem('downloaded_materials');
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+
+  const markDownloaded = useCallback((id: string) => {
+    setDownloadedIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      localStorage.setItem('downloaded_materials', JSON.stringify([...next]));
+      return next;
+    });
+  }, []);
+
+  const clearDownloaded = useCallback((id: string) => {
+    setDownloadedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      localStorage.setItem('downloaded_materials', JSON.stringify([...next]));
+      return next;
+    });
+  }, []);
+
   const downloadSingle = useCallback(async (item: MaterialItem) => {
     try {
       const response = await fetch(item.filePath);
@@ -82,10 +110,11 @@ export function LibraryView() {
       link.download = item.fileName;
       link.click();
       window.URL.revokeObjectURL(blobUrl);
+      markDownloaded(item.id);
     } catch (error) {
       console.error('Download error:', error);
     }
-  }, []);
+  }, [markDownloaded]);
 
   const downloadAll = useCallback(async () => {
     if (materials.length === 0) return;
@@ -125,12 +154,14 @@ export function LibraryView() {
       link.download = `素材库_${dateStr}.zip`;
       link.click();
       window.URL.revokeObjectURL(blobUrl);
+      // Mark all as downloaded
+      materials.forEach((item) => markDownloaded(item.id));
     } catch (error) {
       console.error('Batch download error:', error);
     } finally {
       setIsDownloading(false);
     }
-  }, [materials]);
+  }, [materials, markDownloaded]);
 
   const deleteMaterial = useCallback(async (item: MaterialItem) => {
     if (!confirm(`确定删除「${item.fileName}」？`)) return;
@@ -140,18 +171,22 @@ export function LibraryView() {
       });
       if (res.ok) {
         setMaterials((prev) => prev.filter((m) => m.id !== item.id));
+        clearDownloaded(item.id);
       } else {
-        alert('删除失败');
+        const data = await res.json().catch(() => null);
+        alert(data?.error || '删除失败');
       }
     } catch (error) {
       console.error('Delete error:', error);
       alert('删除失败');
     }
-  }, []);
+  }, [clearDownloaded]);
 
   const formatDate = (iso: string) => {
     const d = new Date(iso);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    return `${date} ${time}`;
   };
 
   return (
@@ -251,6 +286,7 @@ export function LibraryView() {
                     key={item.id}
                     item={item}
                     isPlaying={playingVideo === item.id}
+                    isDownloaded={downloadedIds.has(item.id)}
                     onPlay={() =>
                       setPlayingVideo(
                         playingVideo === item.id ? null : item.id
@@ -272,6 +308,7 @@ export function LibraryView() {
               key={item.id}
               item={item}
               isPlaying={playingVideo === item.id}
+              isDownloaded={downloadedIds.has(item.id)}
               onPlay={() =>
                 setPlayingVideo(playingVideo === item.id ? null : item.id)
               }
@@ -289,6 +326,7 @@ export function LibraryView() {
 function MaterialRow({
   item,
   isPlaying,
+  isDownloaded,
   onPlay,
   onDownload,
   onDelete,
@@ -296,6 +334,7 @@ function MaterialRow({
 }: {
   item: MaterialItem;
   isPlaying: boolean;
+  isDownloaded: boolean;
   onPlay: () => void;
   onDownload: () => void;
   onDelete: () => void;
@@ -308,7 +347,9 @@ function MaterialRow({
           'flex items-center gap-3 p-3 rounded-lg transition-all',
           isPlaying
             ? 'bg-zinc-800 border border-cyan-800/50'
-            : 'hover:bg-zinc-900/80 border border-transparent'
+            : isDownloaded
+              ? 'bg-zinc-900/40 border border-green-900/30'
+              : 'hover:bg-zinc-900/80 border border-transparent'
         )}
       >
         {/* Play button */}
@@ -329,9 +370,16 @@ function MaterialRow({
 
         {/* Info */}
         <div className="flex-1 min-w-0">
-          <p className="text-sm text-zinc-200 font-mono truncate">
-            {item.fileName}
-          </p>
+          <div className="flex items-center gap-2">
+            <p className="text-sm text-zinc-200 font-mono truncate">
+              {item.fileName}
+            </p>
+            {isDownloaded && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-900/50 text-green-400 border border-green-800/50 shrink-0">
+                已下载
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-2 mt-0.5">
             <span className="text-xs px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">
               {item.shotTypeLabel}
@@ -349,8 +397,13 @@ function MaterialRow({
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <button
             onClick={onDownload}
-            className="p-2 rounded-md text-zinc-500 hover:text-cyan-400 hover:bg-zinc-800 transition-colors"
-            title="下载"
+            className={cn(
+              'p-2 rounded-md transition-colors',
+              isDownloaded
+                ? 'text-green-500 hover:text-green-400 hover:bg-zinc-800'
+                : 'text-zinc-500 hover:text-cyan-400 hover:bg-zinc-800'
+            )}
+            title={isDownloaded ? '已下载' : '下载'}
           >
             <Download className="w-4 h-4" />
           </button>
