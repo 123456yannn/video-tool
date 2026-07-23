@@ -91,10 +91,7 @@ function scoreSegment(
 function getClipCountByDuration(duration: number): number {
   if (duration <= 10) return 1;
   if (duration <= 20) return 4;
-  if (duration <= 30) return 5;
-  if (duration <= 60) return 7;
-  if (duration <= 120) return 10;
-  return Math.min(15, Math.ceil(duration / 10));
+  return 5;
 }
 
 function generateContentTags(scene: SceneSegment): string[] {

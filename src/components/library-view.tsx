@@ -9,6 +9,7 @@ import {
   RefreshCw,
   Download,
   Package,
+  Trash2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { SHOT_TYPE_LABELS } from '@/lib/types';
@@ -131,6 +132,23 @@ export function LibraryView() {
     }
   }, [materials]);
 
+  const deleteMaterial = useCallback(async (item: MaterialItem) => {
+    if (!confirm(`确定删除「${item.fileName}」？`)) return;
+    try {
+      const res = await fetch(`/api/library/delete?file=${encodeURIComponent(item.fileName)}&category=${item.shotType}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        setMaterials((prev) => prev.filter((m) => m.id !== item.id));
+      } else {
+        alert('删除失败');
+      }
+    } catch (error) {
+      console.error('Delete error:', error);
+      alert('删除失败');
+    }
+  }, []);
+
   const formatDate = (iso: string) => {
     const d = new Date(iso);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -239,6 +257,7 @@ export function LibraryView() {
                       )
                     }
                     onDownload={() => downloadSingle(item)}
+                    onDelete={() => deleteMaterial(item)}
                     formatDate={formatDate}
                   />
                 ))}
@@ -257,6 +276,7 @@ export function LibraryView() {
                 setPlayingVideo(playingVideo === item.id ? null : item.id)
               }
               onDownload={() => downloadSingle(item)}
+              onDelete={() => deleteMaterial(item)}
               formatDate={formatDate}
             />
           ))}
@@ -271,12 +291,14 @@ function MaterialRow({
   isPlaying,
   onPlay,
   onDownload,
+  onDelete,
   formatDate,
 }: {
   item: MaterialItem;
   isPlaying: boolean;
   onPlay: () => void;
   onDownload: () => void;
+  onDelete: () => void;
   formatDate: (iso: string) => string;
 }) {
   return (
@@ -323,14 +345,23 @@ function MaterialRow({
           </div>
         </div>
 
-        {/* Download button */}
-        <button
-          onClick={onDownload}
-          className="p-2 rounded-md text-zinc-500 hover:text-cyan-400 hover:bg-zinc-800 transition-colors opacity-0 group-hover:opacity-100"
-          title="下载"
-        >
-          <Download className="w-4 h-4" />
-        </button>
+        {/* Action buttons */}
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={onDownload}
+            className="p-2 rounded-md text-zinc-500 hover:text-cyan-400 hover:bg-zinc-800 transition-colors"
+            title="下载"
+          >
+            <Download className="w-4 h-4" />
+          </button>
+          <button
+            onClick={onDelete}
+            className="p-2 rounded-md text-zinc-500 hover:text-red-400 hover:bg-zinc-800 transition-colors"
+            title="删除"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Video Player */}
