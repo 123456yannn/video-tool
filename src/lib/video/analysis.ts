@@ -88,6 +88,95 @@ function scoreSegment(
   return score;
 }
 
+function getClipCountByDuration(duration: number): number {
+  if (duration <= 10) return 1;
+  if (duration <= 20) return 4;
+  if (duration <= 30) return 5;
+  if (duration <= 60) return 7;
+  if (duration <= 120) return 10;
+  return Math.min(15, Math.ceil(duration / 10));
+}
+
+function generateContentTags(scene: SceneSegment): string[] {
+  const tags: string[] = [];
+
+  // Shot type based tags
+  const shotTypeTagMap: Record<ShotType, string[]> = {
+    'product-closeup': ['产品', '特写'],
+    environment: ['环境', '空镜'],
+    human: ['人物', '空镜'],
+    'production-line': ['生产线', '厂房'],
+    'dynamic-to-static': ['动态', '转场'],
+  };
+  tags.push(...(shotTypeTagMap[scene.shotType] || []));
+
+  // Motion based tags
+  if (scene.motionLevel > 0.6) {
+    tags.push('运动');
+  } else if (scene.motionLevel > 0.3) {
+    tags.push('中速');
+  } else {
+    tags.push('静态');
+  }
+
+  // Brightness based tags
+  if (scene.brightness > 180) {
+    tags.push('明亮');
+  } else if (scene.brightness > 120) {
+    tags.push('正常');
+  } else {
+    tags.push('偏暗');
+  }
+
+  // Color based tags (inferred from shot type and brightness)
+  if (scene.shotType === 'product-closeup' || scene.shotType === 'human') {
+    tags.push('暖色');
+  } else if (scene.shotType === 'environment') {
+    tags.push('冷色');
+  } else if (scene.shotType === 'production-line') {
+    tags.push('冷色');
+  }
+
+  // Time position tags
+  if (scene.startTime < 3) {
+    tags.push('开头');
+  }
+
+  return tags;
+}
+
+function areScenesDiverse(
+  existingClips: AnalysisResult['selectedClips'],
+  candidateScene: SceneSegment,
+  allScenes: SceneSegment[]
+): boolean {
+  // Check shot type diversity
+  const existingTypes = new Set(existingClips.map((c) => c.shotType));
+  if (!existingTypes.has(candidateScene.shotType)) return true;
+
+  // If same shot type, check if it's far enough from existing clips
+  for (const clip of existingClips) {
+    const clipEnd = clip.startTime + clip.duration;
+    const distance = Math.min(
+      Math.abs(candidateScene.startTime - clip.startTime),
+      Math.abs(candidateScene.startTime - clipEnd),
+      Math.abs(candidateScene.endTime - clip.startTime),
+      Math.abs(candidateScene.endTime - clipEnd)
+    );
+    if (distance < 3) return false;
+  }
+
+  // Check motion level diversity
+  const existingMotions = existingClips.map((c) => {
+    const s = allScenes.find((sc) => sc.index === c.segmentIndex);
+    return s?.motionLevel || 0;
+  });
+  const avgMotion = existingMotions.reduce((a, b) => a + b, 0) / existingMotions.length;
+  if (Math.abs(candidateScene.motionLevel - avgMotion) > 0.2) return true;
+
+  return existingTypes.size < 3;
+}
+
 export interface AnalysisResult {
   metadata: {
     duration: number;
@@ -104,6 +193,7 @@ export interface AnalysisResult {
     duration: number;
     shotType: ShotType;
     score: number;
+    contentTags: string[];
   }[];
 }
 
@@ -191,55 +281,72 @@ export function analyzeVideo(jobId: string, fileName: string): AnalysisResult {
     // ignore
   }
 
-  // Step 4: Select best 1-2 clips (target ~3s each)
+  // Step 4: Select best clips based on duration and diversity
+  const targetCount = getClipCountByDuration(metadata.duration);
+  const selectedClips: AnalysisResult['selectedClips'] = [];
+  const usedSegments = new Set<number>();
+
   // Sort by score descending
   const sortedScenes = [...scenes].sort((a, b) => b.score - a.score);
 
-  const selectedClips: AnalysisResult['selectedClips'] = [];
-  const usedTimeRanges: { start: number; end: number }[] = [];
-
+  // First pass: pick best clip per shot type (ensures diversity)
+  const shotTypesSeen = new Set<ShotType>();
   for (const scene of sortedScenes) {
-    if (selectedClips.length >= 2) break;
+    if (selectedClips.length >= targetCount) break;
+    if (usedSegments.has(scene.index)) continue;
 
-    // Try to extract a ~3s clip from this segment
-    let clipStart = scene.startTime;
-    let clipDuration = Math.min(3.0, scene.duration);
-
-    // Clamp to 2.8-3.2 range if possible
-    if (clipDuration < 2.8) {
-      // Segment too short, try to extend
-      const extendBefore = Math.min(0.2, clipStart);
-      const extendAfter = Math.min(
-        2.8 - clipDuration + extendBefore,
-        metadata.duration - (clipStart + clipDuration)
-      );
-      clipStart = Math.max(0, clipStart - extendBefore);
-      clipDuration = Math.min(3.0, clipDuration + extendBefore + extendAfter);
+    if (!shotTypesSeen.has(scene.shotType)) {
+      const clipDuration = Math.min(3.0, scene.duration);
+      const clipStart = scene.startTime + (scene.duration - clipDuration) / 2;
+      selectedClips.push({
+        segmentIndex: scene.index,
+        startTime: Math.max(0, clipStart),
+        duration: clipDuration,
+        shotType: scene.shotType,
+        score: scene.score,
+        contentTags: generateContentTags(scene),
+      });
+      shotTypesSeen.add(scene.shotType);
+      usedSegments.add(scene.index);
     }
+  }
 
-    if (clipDuration < 2.8) {
-      clipDuration = Math.max(2.8, clipDuration);
+  // Second pass: fill remaining slots with diverse scenes
+  for (const scene of sortedScenes) {
+    if (selectedClips.length >= targetCount) break;
+    if (usedSegments.has(scene.index)) continue;
+
+    if (areScenesDiverse(selectedClips, scene, scenes)) {
+      const clipDuration = Math.min(3.0, scene.duration);
+      const clipStart = scene.startTime + (scene.duration - clipDuration) / 2;
+      selectedClips.push({
+        segmentIndex: scene.index,
+        startTime: Math.max(0, clipStart),
+        duration: clipDuration,
+        shotType: scene.shotType,
+        score: scene.score,
+        contentTags: generateContentTags(scene),
+      });
+      usedSegments.add(scene.index);
     }
-    if (clipDuration > 3.2) {
-      clipDuration = 3.2;
-    }
+  }
 
-    // Check no overlap with already selected clips
-    const clipEnd = clipStart + clipDuration;
-    const overlaps = usedTimeRanges.some(
-      (r) => clipStart < r.end && clipEnd > r.start
-    );
-    if (overlaps) continue;
+  // Third pass: fill remaining slots with highest scoring scenes
+  for (const scene of sortedScenes) {
+    if (selectedClips.length >= targetCount) break;
+    if (usedSegments.has(scene.index)) continue;
 
+    const clipDuration = Math.min(3.0, scene.duration);
+    const clipStart = scene.startTime + (scene.duration - clipDuration) / 2;
     selectedClips.push({
       segmentIndex: scene.index,
-      startTime: clipStart,
+      startTime: Math.max(0, clipStart),
       duration: clipDuration,
       shotType: scene.shotType,
       score: scene.score,
+      contentTags: generateContentTags(scene),
     });
-
-    usedTimeRanges.push({ start: clipStart, end: clipEnd });
+    usedSegments.add(scene.index);
   }
 
   // If we still don't have any clips, take the best scoring segment regardless
@@ -251,6 +358,7 @@ export function analyzeVideo(jobId: string, fileName: string): AnalysisResult {
       duration: Math.min(3.0, best.duration),
       shotType: best.shotType,
       score: best.score,
+      contentTags: generateContentTags(best),
     });
   }
 

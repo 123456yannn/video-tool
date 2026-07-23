@@ -42,7 +42,12 @@ function processSingleClip(opts: ProcessOptions): string {
   const seq = getNextSequence(category);
   const dateStr = formatDate();
   const label = SHOT_TYPE_LABELS[category] || category;
-  const outputName = `${label}_${dateStr}_${seq}.mp4`;
+
+  // Use content tags for descriptive file naming
+  const contentSuffix = clip.contentTags && clip.contentTags.length > 0
+    ? `_${clip.contentTags.join('_')}`
+    : '';
+  const outputName = `${label}${contentSuffix}_${dateStr}_${seq}.mp4`;
   const outputDir = path.join(MATERIALS_DIR, SHOT_TYPE_DIRS[category]);
   const outputPath = path.join(outputDir, outputName);
 

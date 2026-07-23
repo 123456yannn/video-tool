@@ -77,6 +77,7 @@ export interface SceneSegment {
   motionLevel: number; // 0-1
   brightness: number; // 0-255
   isLog: boolean;
+  contentTags?: string[];
 }
 
 export interface SelectedClip {
@@ -85,6 +86,8 @@ export interface SelectedClip {
   duration: number;
   shotType: ShotType;
   accepted: boolean;
+  score?: number;
+  contentTags?: string[];
 }
 
 export interface Job {
