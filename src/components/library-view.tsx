@@ -163,6 +163,35 @@ export function LibraryView() {
     }
   }, [materials, markDownloaded]);
 
+  const deleteAllDownloaded = useCallback(async () => {
+    const downloadedItems = materials.filter((m) => downloadedIds.has(m.id));
+    if (downloadedItems.length === 0) {
+      alert('没有已下载的素材');
+      return;
+    }
+    if (!confirm(`确定删除全部 ${downloadedItems.length} 个已下载素材？`)) return;
+    try {
+      let deletedCount = 0;
+      for (const item of downloadedItems) {
+        const res = await fetch(
+          `/api/library/delete?file=${encodeURIComponent(item.fileName)}&category=${item.shotType}`,
+          { method: 'DELETE' }
+        );
+        if (res.ok) {
+          deletedCount++;
+          clearDownloaded(item.id);
+        }
+      }
+      setMaterials((prev) =>
+        prev.filter((m) => !downloadedIds.has(m.id))
+      );
+      alert(`已删除 ${deletedCount} 个素材`);
+    } catch (error) {
+      console.error('Batch delete error:', error);
+      alert('批量删除失败');
+    }
+  }, [materials, downloadedIds, clearDownloaded]);
+
   const deleteMaterial = useCallback(async (item: MaterialItem) => {
     if (!confirm(`确定删除「${item.fileName}」？`)) return;
     try {
@@ -201,20 +230,33 @@ export function LibraryView() {
         </div>
         <div className="flex items-center gap-2">
           {materials.length > 0 && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="border-cyan-800 text-cyan-400 hover:bg-cyan-950/50"
-              onClick={downloadAll}
-              disabled={isDownloading}
-            >
-              {isDownloading ? (
-                <div className="w-3.5 h-3.5 border-2 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin mr-1.5" />
-              ) : (
-                <Package className="w-3.5 h-3.5 mr-1.5" />
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-cyan-800 text-cyan-400 hover:bg-cyan-950/50"
+                onClick={downloadAll}
+                disabled={isDownloading}
+              >
+                {isDownloading ? (
+                  <div className="w-3.5 h-3.5 border-2 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin mr-1.5" />
+                ) : (
+                  <Package className="w-3.5 h-3.5 mr-1.5" />
+                )}
+                全部下载
+              </Button>
+              {downloadedIds.size > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-red-900/50 text-red-400 hover:bg-red-950/50"
+                  onClick={deleteAllDownloaded}
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                  删除已下载({downloadedIds.size})
+                </Button>
               )}
-              全部下载
-            </Button>
+            </>
           )}
           <Button
             variant="outline"
