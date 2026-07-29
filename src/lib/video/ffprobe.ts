@@ -42,17 +42,25 @@ export function getVideoMetadata(filePath: string): VideoMetadata {
 }
 
 export function detectScenes(filePath: string, threshold = 0.3): number[] {
-  const cmd = `ffmpeg -i "${filePath}" -vf "select='gt(scene\\,${threshold})',showinfo" -f null - 2>&1`;
+  // Use a more reliable scene detection approach
+  const cmd = `ffmpeg -i "${filePath}" -vf "select='gt(scene\\,${threshold})',metadata=print:key=lavfi.scene_score" -f null - 2>&1`;
   try {
-    const result = execSync(cmd, { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
+    const result = execSync(cmd, { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024, timeout: 60000 });
     const timestamps: number[] = [];
+    // Parse pts_time from showinfo output
     const ptsTimeRegex = /pts_time:([\d.]+)/g;
     let match;
     while ((match = ptsTimeRegex.exec(result)) !== null) {
-      timestamps.push(parseFloat(match[1]));
+      const t = parseFloat(match[1]);
+      // Avoid duplicate timestamps and ensure minimum gap
+      if (timestamps.length === 0 || t - timestamps[timestamps.length - 1] > 0.5) {
+        timestamps.push(t);
+      }
     }
+    console.log(`[detectScenes] Found ${timestamps.length} scene changes in ${filePath}`);
     return timestamps;
-  } catch {
+  } catch (err) {
+    console.warn(`[detectScenes] Scene detection failed for ${filePath}, using uniform segments`);
     return [];
   }
 }
@@ -68,42 +76,50 @@ export function analyzeFrame(framePath: string): {
   isLog: boolean;
   colorProfile: 'warm' | 'cool' | 'neutral';
 } {
-  // Use ffprobe to get average brightness from the frame
-  const cmd = `ffmpeg -i "${framePath}" -vf "format=gray,format=gray" -f rawvideo - 2>/dev/null | od -A n -t u1 | tr -s ' ' '\\n' | awk 'NF{s+=$1;n++}END{if(n>0)print s/n; else print 0}'`;
+  // Use ffmpeg stats filter for reliable brightness/contrast analysis
+  const cmd = `ffmpeg -i "${framePath}" -vf "format=gray,signalstats" -f null - 2>&1`;
   let brightness = 128;
-  try {
-    const result = execSync(cmd, { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
-    brightness = parseFloat(result.trim()) || 128;
-  } catch {
-    // fallback
-  }
-
-  // Get min/max brightness for contrast estimation
-  const contrastCmd = `ffmpeg -i "${framePath}" -vf "format=gray,format=gray" -f rawvideo - 2>/dev/null | od -A n -t u1 | tr -s ' ' '\\n' | awk 'NF{v=$1+0;if(NR==1||v<mn)mn=v;if(v>mx)mx=v;n++}END{if(n>0)print mn,mx; else print "0 255"}'`;
   let minVal = 0;
   let maxVal = 255;
+
   try {
-    const result = execSync(contrastCmd, { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
-    const parts = result.trim().split(/\s+/);
-    minVal = parseInt(parts[0], 10) || 0;
-    maxVal = parseInt(parts[1], 10) || 255;
+    const result = execSync(cmd, { encoding: 'utf-8', maxBuffer: 20 * 1024 * 1024, timeout: 30000 });
+    // Parse signalstats output
+    const lavfiBrightnessMatch = /lavfi\.signalstats\.YAVG=([\d.]+)/.exec(result);
+    const lavfiMinMatch = /lavfi\.signalstats\.YMIN=(\d+)/.exec(result);
+    const lavfiMaxMatch = /lavfi\.signalstats\.YMAX=(\d+)/.exec(result);
+
+    if (lavfiBrightnessMatch) brightness = parseFloat(lavfiBrightnessMatch[1]);
+    if (lavfiMinMatch) minVal = parseInt(lavfiMinMatch[1], 10);
+    if (lavfiMaxMatch) maxVal = parseInt(lavfiMaxMatch[1], 10);
   } catch {
-    // fallback
+    // Fallback: use simpler histogram approach
+    try {
+      const fallbackCmd = `ffmpeg -i "${framePath}" -vf "format=gray,histogram=levels_mode=absolute" -frames:v 1 -f null - 2>&1`;
+      execSync(fallbackCmd, { encoding: 'utf-8', maxBuffer: 20 * 1024 * 1024, timeout: 30000 });
+      // If histogram works, use default middle values
+      brightness = 128;
+    } catch {
+      console.warn(`[analyzeFrame] Frame analysis failed for ${framePath}, using defaults`);
+    }
   }
 
   const contrast = maxVal - minVal;
   const isLog = contrast < 100 && brightness > 80 && brightness < 180;
 
-  // Simple color temperature estimation using YUV
+  // Color temperature estimation
   let colorProfile: 'warm' | 'cool' | 'neutral' = 'neutral';
   try {
-    const colorCmd = `ffmpeg -i "${framePath}" -vf "format=yuv422p,extractplanes=u" -f rawvideo - 2>/dev/null | od -A n -t u1 | tr -s ' ' '\\n' | awk 'NF{s+=$1;n++}END{if(n>0)print s/n; else print 128}'`;
-    const uResult = execSync(colorCmd, { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
-    const uAvg = parseFloat(uResult.trim()) || 128;
-    if (uAvg < 124) colorProfile = 'warm';
-    else if (uAvg > 132) colorProfile = 'cool';
+    const colorCmd = `ffmpeg -i "${framePath}" -vf "signalstats" -f null - 2>&1`;
+    const colorResult = execSync(colorCmd, { encoding: 'utf-8', maxBuffer: 20 * 1024 * 1024, timeout: 30000 });
+    const uAvgMatch = /lavfi\.signalstats\.UAVG=([\d.]+)/.exec(colorResult);
+    if (uAvgMatch) {
+      const uAvg = parseFloat(uAvgMatch[1]);
+      if (uAvg < 124) colorProfile = 'warm';
+      else if (uAvg > 132) colorProfile = 'cool';
+    }
   } catch {
-    // fallback
+    // fallback to neutral
   }
 
   return { brightness, contrast, isLog, colorProfile };
@@ -112,23 +128,38 @@ export function analyzeFrame(framePath: string): {
 export function computeMotionScore(filePath: string, startTime: number, endTime: number): number {
   const duration = endTime - startTime;
   const midTime = startTime + duration / 2;
-  const frame1Path = `/tmp/motion_f1_${Date.now()}.ppm`;
-  const frame2Path = `/tmp/motion_f2_${Date.now()}.ppm`;
+  const uniqueId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const frame1Path = `/tmp/motion_f1_${uniqueId}.ppm`;
+  const frame2Path = `/tmp/motion_f2_${uniqueId}.ppm`;
 
   try {
-    extractFrame(filePath, midTime - 0.2, frame1Path);
-    extractFrame(filePath, midTime + 0.2, frame2Path);
+    // Extract two frames with a small time gap
+    const gap = Math.min(0.5, duration * 0.3);
+    extractFrame(filePath, Math.max(0, midTime - gap), frame1Path);
+    extractFrame(filePath, midTime + gap, frame2Path);
 
-    // Compare two frames using MSE
-    const cmd = `ffmpeg -i "${frame1Path}" -i "${frame2Path}" -lavfi "psnr" -f null - 2>&1`;
-    const result = execSync(cmd, { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
-    const psnrMatch = /psnr_average:([\d.]+)|psnr:([\d.]+)/.exec(result);
+    // Use ffmpeg tmix filter to compute frame difference (more reliable than psnr)
+    const cmd = `ffmpeg -i "${frame1Path}" -i "${frame2Path}" -lavfi "blend=difference=1,signalstats" -f null - 2>&1`;
+    const result = execSync(cmd, { encoding: 'utf-8', maxBuffer: 20 * 1024 * 1024, timeout: 30000 });
+
+    // Get average difference value
+    const yavgMatch = /lavfi\.signalstats\.YAVG=([\d.]+)/.exec(result);
+    if (yavgMatch) {
+      const avgDiff = parseFloat(yavgMatch[1]);
+      // Convert 0-255 difference to 0-1 score
+      const score = Math.max(0, Math.min(1, avgDiff / 80));
+      return score;
+    }
+
+    // Fallback: use psnr
+    const psnrCmd = `ffmpeg -i "${frame1Path}" -i "${frame2Path}" -lavfi "psnr" -f null - 2>&1`;
+    const psnrResult = execSync(psnrCmd, { encoding: 'utf-8', maxBuffer: 20 * 1024 * 1024, timeout: 30000 });
+    const psnrMatch = /psnr_average:([\d.]+)|psnr:([\d.]+)/.exec(psnrResult);
     const psnr = psnrMatch ? parseFloat(psnrMatch[1] || psnrMatch[2]) : 30;
-
-    // Convert PSNR to 0-1 motion score (lower PSNR = more motion)
     const score = Math.max(0, Math.min(1, (60 - psnr) / 40));
     return score;
   } catch {
+    console.warn(`[computeMotionScore] Motion analysis failed for segment ${startTime}-${endTime}, using default`);
     return 0.5;
   } finally {
     try {

@@ -215,9 +215,18 @@ export function analyzeVideo(jobId: string, fileName: string): AnalysisResult {
     }
   }
 
-  // If no scenes detected, treat the whole video as one segment
-  if (rawSegments.length === 0) {
-    rawSegments.push({ start: 0, end: metadata.duration });
+  // If no scenes detected or too few segments, divide video into uniform segments
+  if (rawSegments.length <= 1) {
+    console.log(`[analyzeVideo] Scene detection found ${rawSegments.length} segments, using uniform division`);
+    rawSegments.length = 0;
+    const segmentDuration = 3; // 3-second uniform segments
+    const totalDuration = metadata.duration;
+    for (let t = 0; t < totalDuration; t += segmentDuration) {
+      const end = Math.min(t + segmentDuration, totalDuration);
+      if (end - t >= 1) {
+        rawSegments.push({ start: t, end });
+      }
+    }
   }
 
   // Step 3: Analyze each segment
@@ -225,6 +234,8 @@ export function analyzeVideo(jobId: string, fileName: string): AnalysisResult {
   if (!fs.existsSync(tempDir)) {
     fs.mkdirSync(tempDir, { recursive: true });
   }
+
+  console.log(`[analyzeVideo] Analyzing ${rawSegments.length} segments for ${fileName}`);
 
   const scenes: SceneSegment[] = rawSegments.map((seg, idx) => {
     const midTime = seg.start + (seg.end - seg.start) / 2;
@@ -358,6 +369,11 @@ export function analyzeVideo(jobId: string, fileName: string): AnalysisResult {
       contentTags: generateContentTags(best),
     });
   }
+
+  console.log(`[analyzeVideo] Selected ${selectedClips.length} clips from ${scenes.length} scenes`);
+  selectedClips.forEach((clip, i) => {
+    console.log(`  Clip ${i + 1}: ${clip.shotType} at ${clip.startTime.toFixed(1)}s (score: ${clip.score})`);
+  });
 
   return { metadata, scenes, selectedClips };
 }
