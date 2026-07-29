@@ -42,8 +42,8 @@ export function getVideoMetadata(filePath: string): VideoMetadata {
 }
 
 export function detectScenes(filePath: string, threshold = 0.3): number[] {
-  // Use a more reliable scene detection approach
-  const cmd = `ffmpeg -i "${filePath}" -vf "select='gt(scene\\,${threshold})',metadata=print:key=lavfi.scene_score" -f null - 2>&1`;
+  // Use simpler scene detection with showinfo filter
+  const cmd = `ffmpeg -i "${filePath}" -vf "select='gt(scene\\,${threshold})',showinfo" -f null - 2>&1`;
   try {
     const result = execSync(cmd, { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024, timeout: 60000 });
     const timestamps: number[] = [];
@@ -60,7 +60,7 @@ export function detectScenes(filePath: string, threshold = 0.3): number[] {
     console.log(`[detectScenes] Found ${timestamps.length} scene changes in ${filePath}`);
     return timestamps;
   } catch (err) {
-    console.warn(`[detectScenes] Scene detection failed for ${filePath}, using uniform segments`);
+    console.warn(`[detectScenes] Scene detection failed for ${filePath}: ${err}`);
     return [];
   }
 }
@@ -77,10 +77,11 @@ export function analyzeFrame(framePath: string): {
   colorProfile: 'warm' | 'cool' | 'neutral';
 } {
   // Use ffmpeg stats filter for reliable brightness/contrast analysis
-  const cmd = `ffmpeg -i "${framePath}" -vf "format=gray,signalstats" -f null - 2>&1`;
+  const cmd = `ffmpeg -i "${framePath}" -vf "signalstats" -f null - 2>&1`;
   let brightness = 128;
   let minVal = 0;
   let maxVal = 255;
+  let colorProfile: 'warm' | 'cool' | 'neutral' = 'neutral';
 
   try {
     const result = execSync(cmd, { encoding: 'utf-8', maxBuffer: 20 * 1024 * 1024, timeout: 30000 });
@@ -88,39 +89,25 @@ export function analyzeFrame(framePath: string): {
     const lavfiBrightnessMatch = /lavfi\.signalstats\.YAVG=([\d.]+)/.exec(result);
     const lavfiMinMatch = /lavfi\.signalstats\.YMIN=(\d+)/.exec(result);
     const lavfiMaxMatch = /lavfi\.signalstats\.YMAX=(\d+)/.exec(result);
+    const uAvgMatch = /lavfi\.signalstats\.UAVG=([\d.]+)/.exec(result);
 
     if (lavfiBrightnessMatch) brightness = parseFloat(lavfiBrightnessMatch[1]);
     if (lavfiMinMatch) minVal = parseInt(lavfiMinMatch[1], 10);
     if (lavfiMaxMatch) maxVal = parseInt(lavfiMaxMatch[1], 10);
-  } catch {
-    // Fallback: use simpler histogram approach
-    try {
-      const fallbackCmd = `ffmpeg -i "${framePath}" -vf "format=gray,histogram=levels_mode=absolute" -frames:v 1 -f null - 2>&1`;
-      execSync(fallbackCmd, { encoding: 'utf-8', maxBuffer: 20 * 1024 * 1024, timeout: 30000 });
-      // If histogram works, use default middle values
-      brightness = 128;
-    } catch {
-      console.warn(`[analyzeFrame] Frame analysis failed for ${framePath}, using defaults`);
-    }
-  }
-
-  const contrast = maxVal - minVal;
-  const isLog = contrast < 100 && brightness > 80 && brightness < 180;
-
-  // Color temperature estimation
-  let colorProfile: 'warm' | 'cool' | 'neutral' = 'neutral';
-  try {
-    const colorCmd = `ffmpeg -i "${framePath}" -vf "signalstats" -f null - 2>&1`;
-    const colorResult = execSync(colorCmd, { encoding: 'utf-8', maxBuffer: 20 * 1024 * 1024, timeout: 30000 });
-    const uAvgMatch = /lavfi\.signalstats\.UAVG=([\d.]+)/.exec(colorResult);
+    
+    // Color temperature estimation
     if (uAvgMatch) {
       const uAvg = parseFloat(uAvgMatch[1]);
       if (uAvg < 124) colorProfile = 'warm';
       else if (uAvg > 132) colorProfile = 'cool';
     }
-  } catch {
-    // fallback to neutral
+  } catch (err) {
+    console.warn(`[analyzeFrame] Frame analysis failed for ${framePath}: ${err}`);
+    // Use defaults
   }
+
+  const contrast = maxVal - minVal;
+  const isLog = contrast < 100 && brightness > 80 && brightness < 180;
 
   return { brightness, contrast, isLog, colorProfile };
 }

@@ -2,6 +2,7 @@ import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import type { SceneSegment, ShotType } from '../types';
+import type { VideoMetadata } from './ffprobe';
 import {
   getVideoMetadata,
   detectScenes,
@@ -198,10 +199,37 @@ export function analyzeVideo(jobId: string, fileName: string): AnalysisResult {
   const filePath = path.join(UPLOADS_DIR, fileName);
 
   // Step 1: Get metadata
-  const metadata = getVideoMetadata(filePath);
+  let metadata: VideoMetadata;
+  try {
+    metadata = getVideoMetadata(filePath);
+  } catch (err) {
+    console.error(`[analyzeVideo] Failed to get metadata for ${fileName}: ${err}`);
+    // Return empty result if we can't even get metadata
+    return {
+      metadata: { duration: 0, width: 0, height: 0, fps: 30, hasAudio: false, aspectRatio: '16:9' },
+      scenes: [],
+      selectedClips: [],
+    };
+  }
+
+  if (metadata.duration <= 0) {
+    console.error(`[analyzeVideo] Invalid duration for ${fileName}: ${metadata.duration}`);
+    return {
+      metadata,
+      scenes: [],
+      selectedClips: [],
+    };
+  }
+
+  console.log(`[analyzeVideo] Processing ${fileName}: ${metadata.duration}s, ${metadata.width}x${metadata.height}`);
 
   // Step 2: Detect scene changes
-  const sceneTimestamps = detectScenes(filePath, 0.3);
+  let sceneTimestamps: number[] = [];
+  try {
+    sceneTimestamps = detectScenes(filePath, 0.3);
+  } catch (err) {
+    console.warn(`[analyzeVideo] Scene detection threw error: ${err}`);
+  }
 
   // Build segments from scene changes
   const boundaries = [0, ...sceneTimestamps, metadata.duration];
@@ -229,13 +257,13 @@ export function analyzeVideo(jobId: string, fileName: string): AnalysisResult {
     }
   }
 
+  console.log(`[analyzeVideo] Will analyze ${rawSegments.length} segments`);
+
   // Step 3: Analyze each segment
   const tempDir = `/tmp/video_analysis_${jobId}`;
   if (!fs.existsSync(tempDir)) {
     fs.mkdirSync(tempDir, { recursive: true });
   }
-
-  console.log(`[analyzeVideo] Analyzing ${rawSegments.length} segments for ${fileName}`);
 
   const scenes: SceneSegment[] = rawSegments.map((seg, idx) => {
     const midTime = seg.start + (seg.end - seg.start) / 2;
@@ -253,7 +281,8 @@ export function analyzeVideo(jobId: string, fileName: string): AnalysisResult {
       contrast = analysis.contrast;
       isLog = analysis.isLog;
       colorProfile = analysis.colorProfile;
-    } catch {
+    } catch (err) {
+      console.warn(`[analyzeVideo] Frame analysis failed for segment ${idx}: ${err}`);
       // use defaults
     }
 
@@ -359,6 +388,7 @@ export function analyzeVideo(jobId: string, fileName: string): AnalysisResult {
 
   // If we still don't have any clips, take the best scoring segment regardless
   if (selectedClips.length === 0 && scenes.length > 0) {
+    console.log(`[analyzeVideo] No clips selected, forcing best segment`);
     const best = sortedScenes[0];
     selectedClips.push({
       segmentIndex: best.index,
@@ -367,6 +397,21 @@ export function analyzeVideo(jobId: string, fileName: string): AnalysisResult {
       shotType: best.shotType,
       score: best.score,
       contentTags: generateContentTags(best),
+    });
+  }
+
+  // Final safety check: if still no clips, create a default clip from the middle of the video
+  if (selectedClips.length === 0) {
+    console.log(`[analyzeVideo] CRITICAL: Still no clips, creating default clip`);
+    const defaultDuration = Math.min(3.0, metadata.duration);
+    const defaultStart = (metadata.duration - defaultDuration) / 2;
+    selectedClips.push({
+      segmentIndex: 0,
+      startTime: Math.max(0, defaultStart),
+      duration: defaultDuration,
+      shotType: 'product-closeup',
+      score: 50,
+      contentTags: ['默认'],
     });
   }
 
