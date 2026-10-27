@@ -3,25 +3,18 @@ import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import type { ShotType, SelectedClip } from '../types';
-import { SHOT_TYPE_LABELS, SHOT_TYPE_DIRS } from '../types';
+import { SHOT_TYPE_DIRS } from '../types';
 import { UPLOADS_DIR, MATERIALS_DIR } from './constants';
 
-function formatDate(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}${m}${day}`;
-}
-
-function getNextSequence(category: string): string {
-  const dir = path.join(MATERIALS_DIR, SHOT_TYPE_DIRS[category as ShotType] || category);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+function getUniqueOutputPath(dir: string, baseName: string, seq: number): string {
+  const paddedSeq = String(seq).padStart(2, '0');
+  let candidate = path.join(dir, `${baseName}_${paddedSeq}.mp4`);
+  let counter = 1;
+  while (fs.existsSync(candidate)) {
+    candidate = path.join(dir, `${baseName}_${paddedSeq}(${counter}).mp4`);
+    counter++;
   }
-  const files = fs.readdirSync(dir).filter((f: string) => f.endsWith('.mp4'));
-  const seq = String(files.length + 1).padStart(3, '0');
-  return seq;
+  return candidate;
 }
 
 interface ProcessOptions {
@@ -37,12 +30,15 @@ function processSingleClip(opts: ProcessOptions): string {
   const { jobId, fileName, clip, hasAudio } = opts;
   const inputPath = path.join(UPLOADS_DIR, fileName);
   const category = clip.shotType;
-  const seq = getNextSequence(category);
-  const dateStr = formatDate();
-  const label = SHOT_TYPE_LABELS[category] || category;
-  const outputName = `${label}_${dateStr}_${seq}.mp4`;
   const outputDir = path.join(MATERIALS_DIR, SHOT_TYPE_DIRS[category]);
-  const outputPath = path.join(outputDir, outputName);
+  if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir, { recursive: true });
+  }
+
+  // Use original video filename as base
+  const baseName = path.basename(fileName, path.extname(fileName));
+  const outputPath = getUniqueOutputPath(outputDir, baseName, clip.segmentIndex + 1);
+  const outputName = path.basename(outputPath);
 
   const tempDir = `/tmp/process_${jobId}_${clip.segmentIndex}`;
   if (!fs.existsSync(tempDir)) {
