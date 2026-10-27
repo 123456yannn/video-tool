@@ -47,49 +47,40 @@ function ClipPreview({
 
   const activeClip = clips[activeClipIndex];
 
-  // Initialize manual clips when switching to manual mode
-  // Clips are distributed evenly across the video duration (overlap allowed)
-  const initManualClips = useCallback((count?: number) => {
-    const duration = job.videoMetadata?.duration || 30;
-    const clipDuration = 3;
-    const targetCount = Math.max(1, count ?? manualClipCount);
-    const maxStart = Math.max(0, duration - clipDuration);
-    const newClips: ManualClip[] = [];
-    for (let i = 0; i < targetCount; i++) {
-      const start =
-        targetCount === 1 ? maxStart / 2 : (maxStart / (targetCount - 1)) * i;
-      newClips.push({
-        startTime: Math.round(start * 10) / 10,
-        endTime: Math.round(Math.min(duration, start + clipDuration) * 10) / 10,
-      });
-    }
-    setManualClips(newClips);
-  }, [manualClipCount, job.videoMetadata?.duration]);
-
-  // Adjust clip count: keep existing edits, append or trim rows
-  const adjustManualClipCount = useCallback(
-    (newCount: number) => {
+  // Distribute clips evenly: each clip duration = total duration / count
+  const distributeClips = useCallback(
+    (count: number): ManualClip[] => {
       const duration = job.videoMetadata?.duration || 30;
-      const clipDuration = 3;
-      setManualClipCount(newCount);
-      setManualClips((prev) => {
-        if (newCount === prev.length) return prev;
-        if (newCount < prev.length) return prev.slice(0, newCount);
-        const next = [...prev];
-        const maxStart = Math.max(0, duration - clipDuration);
-        for (let i = prev.length; i < newCount; i++) {
-          const start =
-            newCount === 1 ? maxStart / 2 : (maxStart / (newCount - 1)) * i;
-          next.push({
-            startTime: Math.round(start * 10) / 10,
-            endTime:
-              Math.round(Math.min(duration, start + clipDuration) * 10) / 10,
-          });
-        }
-        return next;
-      });
+      const clipDuration = duration / count;
+      const newClips: ManualClip[] = [];
+      for (let i = 0; i < count; i++) {
+        const start = clipDuration * i;
+        const end = i === count - 1 ? duration : clipDuration * (i + 1);
+        newClips.push({
+          startTime: Math.round(start * 10) / 10,
+          endTime: Math.round(end * 10) / 10,
+        });
+      }
+      return newClips;
     },
     [job.videoMetadata?.duration]
+  );
+
+  // Initialize manual clips when switching to manual mode
+  const initManualClips = useCallback(
+    (count?: number) => {
+      setManualClips(distributeClips(Math.max(1, count ?? manualClipCount)));
+    },
+    [manualClipCount, distributeClips]
+  );
+
+  // Change clip count: re-divide total duration evenly
+  const adjustManualClipCount = useCallback(
+    (newCount: number) => {
+      setManualClipCount(newCount);
+      setManualClips(distributeClips(newCount));
+    },
+    [distributeClips]
   );
 
   const updateManualClip = useCallback((index: number, field: 'startTime' | 'endTime', value: number) => {
