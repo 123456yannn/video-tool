@@ -126,10 +126,32 @@ function ClipPreview({
   const handleConfirm = useCallback(async () => {
     setIsProcessing(true);
     try {
+      // 手动模式下，确认输出时自动应用手动设置的片段，无需先点"应用"
+      let clipsToConfirm = clips;
+      if (mode === 'manual') {
+        const duration = job.videoMetadata?.duration || 30;
+        const invalid = manualClips.some(
+          (mc) => mc.startTime < 0 || mc.endTime > duration || mc.endTime <= mc.startTime
+        );
+        if (invalid) {
+          alert('存在无效的时间段，请检查：起始需≥0，结束需≤视频总时长，且结束需大于起始');
+          setIsProcessing(false);
+          return;
+        }
+        clipsToConfirm = manualClips.map((mc, index) => ({
+          ...(job.selectedClips[0] || ({} as SelectedClip)),
+          id: `manual_${index}`,
+          startTime: mc.startTime,
+          duration: Math.max(0.5, mc.endTime - mc.startTime),
+          score: 0,
+          accepted: true,
+        }));
+      }
+
       const res = await fetch('/api/confirm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jobId: job.id, clips }),
+        body: JSON.stringify({ jobId: job.id, clips: clipsToConfirm }),
       });
 
       if (res.ok) {
@@ -140,7 +162,7 @@ function ClipPreview({
     } finally {
       setIsProcessing(false);
     }
-  }, [job.id, clips, onConfirm]);
+  }, [job.id, job.selectedClips, job.videoMetadata?.duration, clips, mode, manualClips, onConfirm]);
 
   const handleRejectAll = useCallback(async () => {
     setIsProcessing(true);
@@ -182,8 +204,9 @@ function ClipPreview({
               {job.originalName}
             </h3>
             <p className="text-xs text-zinc-500 mt-0.5">
-              已选择 {clips.filter((c) => c.accepted).length} / {clips.length}{' '}
-              个片段
+              {mode === 'manual'
+                ? `手动设置 ${manualClips.length} 个片段`
+                : `已选择 ${clips.filter((c) => c.accepted).length} / ${clips.length} 个片段`}
               {videoDuration > 0 && (
                 <span className="ml-2 text-zinc-600">
                   (总时长 {videoDuration.toFixed(1)}s)
@@ -365,7 +388,8 @@ function ClipPreview({
           className="w-full bg-cyan-600 hover:bg-cyan-700 text-white h-11"
           onClick={handleConfirm}
           disabled={
-            isProcessing || clips.every((c) => !c.accepted)
+            isProcessing ||
+            (mode === 'manual' ? manualClips.length === 0 : clips.every((c) => !c.accepted))
           }
         >
           {isProcessing ? (
@@ -376,7 +400,7 @@ function ClipPreview({
           ) : (
             <span className="flex items-center gap-2">
               <Check className="w-4 h-4" />
-              确认输出
+              确认输出{mode === 'manual' ? ` ${manualClips.length} 条` : ''}
               <ArrowRight className="w-4 h-4" />
             </span>
           )}
