@@ -20,6 +20,7 @@ function getUniqueOutputPath(dir: string, baseName: string, seq: number): string
 interface ProcessOptions {
   jobId: string;
   fileName: string;
+  originalName?: string;
   clip: SelectedClip;
   width: number;
   height: number;
@@ -27,7 +28,7 @@ interface ProcessOptions {
 }
 
 function processSingleClip(opts: ProcessOptions): string {
-  const { jobId, fileName, clip, hasAudio } = opts;
+  const { jobId, fileName, originalName, clip, hasAudio } = opts;
   const inputPath = path.join(UPLOADS_DIR, fileName);
   const category = clip.shotType;
   const outputDir = path.join(MATERIALS_DIR, SHOT_TYPE_DIRS[category]);
@@ -35,8 +36,9 @@ function processSingleClip(opts: ProcessOptions): string {
     fs.mkdirSync(outputDir, { recursive: true });
   }
 
-  // Use original video filename as base
-  const baseName = path.basename(fileName, path.extname(fileName));
+  // Use original video filename as base (fall back to stored fileName)
+  const nameSource = originalName || fileName;
+  const baseName = path.basename(nameSource, path.extname(nameSource));
   const outputPath = getUniqueOutputPath(outputDir, baseName, clip.segmentIndex + 1);
   const outputName = path.basename(outputPath);
 
@@ -100,7 +102,8 @@ export function processClips(
   fileName: string,
   clips: SelectedClip[],
   metadata: { width: number; height: number; hasAudio: boolean },
-  onProgress?: (step: string, percent: number) => void
+  onProgress?: (step: string, percent: number) => void,
+  originalName?: string
 ): ProcessResult {
   const outputFiles: ProcessResult['outputFiles'] = [];
   const total = clips.length;
@@ -115,6 +118,7 @@ export function processClips(
       const outputPath = processSingleClip({
         jobId,
         fileName,
+        originalName,
         clip,
         width: metadata.width,
         height: metadata.height,

@@ -48,20 +48,49 @@ function ClipPreview({
   const activeClip = clips[activeClipIndex];
 
   // Initialize manual clips when switching to manual mode
-  const initManualClips = useCallback(() => {
+  // Clips are distributed evenly across the video duration (overlap allowed)
+  const initManualClips = useCallback((count?: number) => {
     const duration = job.videoMetadata?.duration || 30;
     const clipDuration = 3;
-    const count = Math.min(manualClipCount, Math.floor(duration / clipDuration));
+    const targetCount = Math.max(1, count ?? manualClipCount);
+    const maxStart = Math.max(0, duration - clipDuration);
     const newClips: ManualClip[] = [];
-    for (let i = 0; i < count; i++) {
-      const start = Math.round((duration / (count + 1)) * (i + 1) * 10) / 10;
+    for (let i = 0; i < targetCount; i++) {
+      const start =
+        targetCount === 1 ? maxStart / 2 : (maxStart / (targetCount - 1)) * i;
       newClips.push({
-        startTime: Math.max(0, start - clipDuration / 2),
-        endTime: Math.min(duration, start + clipDuration / 2),
+        startTime: Math.round(start * 10) / 10,
+        endTime: Math.round(Math.min(duration, start + clipDuration) * 10) / 10,
       });
     }
     setManualClips(newClips);
   }, [manualClipCount, job.videoMetadata?.duration]);
+
+  // Adjust clip count: keep existing edits, append or trim rows
+  const adjustManualClipCount = useCallback(
+    (newCount: number) => {
+      const duration = job.videoMetadata?.duration || 30;
+      const clipDuration = 3;
+      setManualClipCount(newCount);
+      setManualClips((prev) => {
+        if (newCount === prev.length) return prev;
+        if (newCount < prev.length) return prev.slice(0, newCount);
+        const next = [...prev];
+        const maxStart = Math.max(0, duration - clipDuration);
+        for (let i = prev.length; i < newCount; i++) {
+          const start =
+            newCount === 1 ? maxStart / 2 : (maxStart / (newCount - 1)) * i;
+          next.push({
+            startTime: Math.round(start * 10) / 10,
+            endTime:
+              Math.round(Math.min(duration, start + clipDuration) * 10) / 10,
+          });
+        }
+        return next;
+      });
+    },
+    [job.videoMetadata?.duration]
+  );
 
   const updateManualClip = useCallback((index: number, field: 'startTime' | 'endTime', value: number) => {
     setManualClips((prev) =>
@@ -211,23 +240,14 @@ function ClipPreview({
             <span className="text-sm text-zinc-300">手动剪辑设置</span>
             <div className="flex items-center gap-2 ml-auto">
               <button
-                onClick={() => {
-                  const newCount = Math.max(1, manualClipCount - 1);
-                  setManualClipCount(newCount);
-                  setTimeout(initManualClips, 0);
-                }}
+                onClick={() => adjustManualClipCount(Math.max(1, manualClipCount - 1))}
                 className="w-6 h-6 rounded bg-zinc-800 text-zinc-400 hover:bg-zinc-700 flex items-center justify-center"
               >
                 <Minus className="w-3 h-3" />
               </button>
               <span className="text-sm text-zinc-300 w-8 text-center">{manualClipCount} 段</span>
               <button
-                onClick={() => {
-                  const maxClips = Math.floor(videoDuration / 1);
-                  const newCount = Math.min(maxClips, manualClipCount + 1);
-                  setManualClipCount(newCount);
-                  setTimeout(initManualClips, 0);
-                }}
+                onClick={() => adjustManualClipCount(Math.min(20, manualClipCount + 1))}
                 className="w-6 h-6 rounded bg-zinc-800 text-zinc-400 hover:bg-zinc-700 flex items-center justify-center"
               >
                 <Plus className="w-3 h-3" />

@@ -100,7 +100,8 @@ export async function POST(request: NextRequest) {
             currentStep: label,
             progress: 20 + Math.round(percent * 0.8),
           });
-        }
+        },
+        job.originalName
       );
 
       const outputFiles = result.outputFiles.map((f) => f.path);
