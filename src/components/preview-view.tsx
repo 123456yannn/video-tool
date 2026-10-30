@@ -130,12 +130,13 @@ function ClipPreview({
           return;
         }
         clipsToConfirm = manualClips.map((mc, index) => ({
-          ...(job.selectedClips[0] || ({} as SelectedClip)),
-          id: `manual_${index}`,
+          segmentIndex: index,
           startTime: mc.startTime,
           duration: Math.max(0.5, mc.endTime - mc.startTime),
-          score: 0,
+          shotType: job.selectedClips[0]?.shotType ?? ('environment' as const),
           accepted: true,
+          score: 0,
+          contentTags: [],
         }));
       }
 

@@ -30,7 +30,8 @@ interface ProcessOptions {
 function processSingleClip(opts: ProcessOptions): string {
   const { jobId, fileName, originalName, clip, hasAudio } = opts;
   const inputPath = path.join(UPLOADS_DIR, fileName);
-  const category = clip.shotType;
+  // Fallback to a valid category if shotType is missing/invalid
+  const category: ShotType = SHOT_TYPE_DIRS[clip.shotType] ? clip.shotType : 'environment';
   const outputDir = path.join(MATERIALS_DIR, SHOT_TYPE_DIRS[category]);
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
