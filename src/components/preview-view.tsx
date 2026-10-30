@@ -47,15 +47,17 @@ function ClipPreview({
 
   const activeClip = clips[activeClipIndex];
 
-  // Distribute clips evenly: each clip duration = total duration / count
+  // Distribute clips: each clip is 3s, evenly spread across the video
+  // 段数默认 = 总时长 ÷ 3秒；用户增减段数时仍保持每段3秒均匀铺开（超出则首尾相连）
   const distributeClips = useCallback(
     (count: number): ManualClip[] => {
       const duration = job.videoMetadata?.duration || 30;
-      const clipDuration = duration / count;
+      const spacing = duration / count;
+      const clipDur = Math.min(3, spacing);
       const newClips: ManualClip[] = [];
       for (let i = 0; i < count; i++) {
-        const start = clipDuration * i;
-        const end = i === count - 1 ? duration : clipDuration * (i + 1);
+        const start = spacing * i;
+        const end = Math.min(duration, start + clipDur);
         newClips.push({
           startTime: Math.round(start * 10) / 10,
           endTime: Math.round(end * 10) / 10,
@@ -66,15 +68,13 @@ function ClipPreview({
     [job.videoMetadata?.duration]
   );
 
-  // Initialize manual clips when switching to manual mode
-  const initManualClips = useCallback(
-    (count?: number) => {
-      setManualClips(distributeClips(Math.max(1, count ?? manualClipCount)));
-    },
-    [manualClipCount, distributeClips]
-  );
+  // Default clip count: floor(duration / 3)
+  const getDefaultClipCount = useCallback((): number => {
+    const duration = job.videoMetadata?.duration || 30;
+    return Math.max(1, Math.floor(duration / 3));
+  }, [job.videoMetadata?.duration]);
 
-  // Change clip count: re-divide total duration evenly
+  // Change clip count: re-distribute 3s clips evenly
   const adjustManualClipCount = useCallback(
     (newCount: number) => {
       setManualClipCount(newCount);
@@ -221,7 +221,7 @@ function ClipPreview({
               <button
                 onClick={() => {
                   setMode('manual');
-                  initManualClips();
+                  adjustManualClipCount(getDefaultClipCount());
                 }}
                 className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
                   mode === 'manual'
@@ -261,7 +261,7 @@ function ClipPreview({
               </button>
               <span className="text-sm text-zinc-300 w-8 text-center">{manualClipCount} 段</span>
               <button
-                onClick={() => adjustManualClipCount(Math.min(20, manualClipCount + 1))}
+                onClick={() => adjustManualClipCount(Math.min(Math.max(1, Math.floor(videoDuration)), manualClipCount + 1))}
                 className="w-6 h-6 rounded bg-zinc-800 text-zinc-400 hover:bg-zinc-700 flex items-center justify-center"
               >
                 <Plus className="w-3 h-3" />

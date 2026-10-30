@@ -90,9 +90,8 @@ function scoreSegment(
 }
 
 function getClipCountByDuration(duration: number): number {
-  if (duration <= 10) return 1;
-  if (duration <= 20) return 4;
-  return 5;
+  // 规则：视频总时长 ÷ 3秒 = 剪辑段数，每段3秒
+  return Math.max(1, Math.floor(duration / 3));
 }
 
 function generateContentTags(scene: SceneSegment): string[] {
