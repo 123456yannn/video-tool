@@ -194,6 +194,34 @@ export function LibraryView() {
     }
   }, [materials, downloadedIds, clearDownloaded]);
 
+  const deleteAllMaterials = useCallback(async () => {
+    if (materials.length === 0) {
+      alert('素材库为空');
+      return;
+    }
+    if (!confirm(`确定删除全部 ${materials.length} 个素材？此操作不可恢复！`)) return;
+    try {
+      let deletedCount = 0;
+      for (const item of materials) {
+        const res = await fetch(
+          `/api/library/delete?file=${encodeURIComponent(item.fileName)}&category=${item.shotType}`,
+          { method: 'DELETE' }
+        );
+        if (res.ok) {
+          deletedCount++;
+          clearDownloaded(item.id);
+        }
+      }
+      setMaterials((prev) =>
+        prev.filter((m) => !materials.some((target) => target.id === m.id))
+      );
+      alert(`已删除 ${deletedCount} 个素材`);
+    } catch (error) {
+      console.error('Batch delete error:', error);
+      alert('批量删除失败');
+    }
+  }, [materials, clearDownloaded]);
+
   const deleteMaterial = useCallback(async (item: MaterialItem) => {
     if (!confirm(`确定删除「${item.fileName}」？`)) return;
     try {
@@ -259,6 +287,17 @@ export function LibraryView() {
                 </Button>
               )}
             </>
+          )}
+          {materials.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-red-900/60 text-red-400 hover:bg-red-950/40"
+              onClick={deleteAllMaterials}
+            >
+              <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+              清空素材库
+            </Button>
           )}
           <Button
             variant="outline"
