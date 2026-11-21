@@ -154,7 +154,8 @@ export function LibraryView() {
       const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
       link.download = `素材库_${dateStr}.zip`;
       link.click();
-      window.URL.revokeObjectURL(blobUrl);
+      // Revoke later to avoid cancelling large downloads in Chrome
+      setTimeout(() => window.URL.revokeObjectURL(blobUrl), 10000);
       // Mark all as downloaded
       materials.forEach((item) => markDownloaded(item.id));
     } catch (error) {
