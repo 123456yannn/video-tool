@@ -1,10 +1,13 @@
-import { execSync, spawn } from 'child_process';
+import { execSync, exec } from 'child_process';
+import { promisify } from 'util';
 import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import type { ShotType, SelectedClip } from '../types';
 import { SHOT_TYPE_DIRS } from '../types';
 import { UPLOADS_DIR, MATERIALS_DIR } from './constants';
+
+const execAsync = promisify(exec);
 
 function getUniqueOutputPath(dir: string, baseName: string, seq: number): string {
   const paddedSeq = String(seq).padStart(2, '0');
@@ -27,7 +30,24 @@ interface ProcessOptions {
   hasAudio: boolean;
 }
 
-function processSingleClip(opts: ProcessOptions): string {
+let hasNvenc: boolean | null = null;
+
+function detectNvenc(): boolean {
+  if (hasNvenc !== null) return hasNvenc;
+  try {
+    // Check for NVENC support (GPU encoding is much faster on NVIDIA cards)
+    const out = execSync('ffmpeg -hide_banner -encoders 2>&1', {
+      encoding: 'utf-8',
+      maxBuffer: 20 * 1024 * 1024,
+    });
+    hasNvenc = out.includes('h264_nvenc');
+  } catch {
+    hasNvenc = false;
+  }
+  return hasNvenc;
+}
+
+async function processSingleClip(opts: ProcessOptions): Promise<string> {
   const { jobId, fileName, originalName, clip, hasAudio } = opts;
   const inputPath = path.join(UPLOADS_DIR, fileName);
   // Fallback to a valid category if shotType is missing/invalid
@@ -50,14 +70,10 @@ function processSingleClip(opts: ProcessOptions): string {
 
   const transformsFile = path.join(tempDir, 'transforms.trf');
 
-  // Pass 1: Stabilization detection
+  // Pass 1: Stabilization detection (lightweight params for speed)
   try {
-    const stabCmd = `ffmpeg -y -ss ${clip.startTime} -t ${clip.duration} -i "${inputPath}" -vf "vidstabdetect=stepsize=6:shakiness=8:accuracy=9:result=${transformsFile}" -f null -`;
-    execSync(stabCmd, {
-      encoding: 'utf-8',
-      maxBuffer: 50 * 1024 * 1024,
-      timeout: 120000,
-    });
+    const stabCmd = `ffmpeg -y -ss ${clip.startTime} -t ${clip.duration} -i "${inputPath}" -vf "vidstabdetect=stepsize=10:shakiness=5:accuracy=5:result=${transformsFile}" -f null -`;
+    await execAsync(stabCmd, { maxBuffer: 50 * 1024 * 1024 });
   } catch {
     // Stabilization may fail, continue without it
   }
@@ -74,15 +90,15 @@ function processSingleClip(opts: ProcessOptions): string {
 
   const videoFilter = filterParts.length > 0 ? filterParts.join(',') : 'null';
 
-  // Pass 2: Main processing
+  // Pass 2: Main processing — prefer GPU (NVENC) when available, else fast CPU preset
   const audioFlag = hasAudio ? '-c:a copy' : '-an';
-  const processCmd = `ffmpeg -y -ss ${clip.startTime} -t ${clip.duration} -i "${inputPath}" -vf "${videoFilter}" ${audioFlag} -c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p -movflags +faststart "${outputPath}"`;
+  const useNvenc = detectNvenc();
+  const encoderArgs = useNvenc
+    ? '-c:v h264_nvenc -preset p4 -cq 20 -rc-lookahead 0 -threads 8'
+    : '-c:v libx264 -preset veryfast -crf 20 -threads 8';
+  const processCmd = `ffmpeg -y -ss ${clip.startTime} -t ${clip.duration} -i "${inputPath}" -vf "${videoFilter}" ${audioFlag} ${encoderArgs} -pix_fmt yuv420p -movflags +faststart "${outputPath}"`;
 
-  execSync(processCmd, {
-    encoding: 'utf-8',
-    maxBuffer: 100 * 1024 * 1024,
-    timeout: 300000,
-  });
+  await execAsync(processCmd, { maxBuffer: 100 * 1024 * 1024 });
 
   // Clean up temp files
   try {
@@ -105,18 +121,24 @@ export function processClips(
   metadata: { width: number; height: number; hasAudio: boolean },
   onProgress?: (step: string, percent: number) => void,
   originalName?: string
-): ProcessResult {
+): Promise<ProcessResult> {
   const outputFiles: ProcessResult['outputFiles'] = [];
-  const total = clips.length;
+  const accepted = clips.filter((c) => c.accepted);
+  const total = accepted.length;
+  let completed = 0;
 
-  for (let i = 0; i < total; i++) {
-    const clip = clips[i];
-    if (!clip.accepted) continue;
+  if (total === 0) return Promise.resolve({ outputFiles });
 
-    onProgress?.('processing', Math.round((i / total) * 100));
+  // Process clips in parallel with limited concurrency (2) for speed.
+  // Each clip uses its own temp dir + output path, so parallel is safe.
+  const CONCURRENCY = 2;
+  let nextIndex = 0;
 
-    try {
-      const outputPath = processSingleClip({
+  const worker = async (): Promise<void> => {
+    while (nextIndex < total) {
+      const i = nextIndex++;
+      const clip = accepted[i];
+      const outputPath = await processSingleClip({
         jobId,
         fileName,
         originalName,
@@ -125,19 +147,20 @@ export function processClips(
         height: metadata.height,
         hasAudio: metadata.hasAudio,
       });
-
       const outputName = path.basename(outputPath);
       outputFiles.push({
         path: outputPath,
         shotType: clip.shotType,
         fileName: outputName,
       });
-    } catch (err) {
-      console.error(`Failed to process clip ${clip.segmentIndex}:`, err);
-      throw err;
+      completed++;
+      onProgress?.('processing', Math.round((completed / total) * 100));
     }
-  }
+  };
 
-  onProgress?.('processing', 100);
-  return { outputFiles };
+  const workers = Array.from({ length: Math.min(CONCURRENCY, total) }, () => worker());
+  return Promise.all(workers).then(() => {
+    onProgress?.('processing', 100);
+    return { outputFiles };
+  });
 }

@@ -145,7 +145,8 @@ export function LibraryView() {
         }
       }
 
-      const content = await zip.generateAsync({ type: 'blob' });
+      // Videos are already compressed; STORE (no compression) is much faster
+      const content = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
       const blobUrl = window.URL.createObjectURL(content);
       const link = document.createElement('a');
       link.href = blobUrl;

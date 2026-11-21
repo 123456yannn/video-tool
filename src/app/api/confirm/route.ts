@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
     });
 
     try {
-      const result = processClips(
+      const result = await processClips(
         jobId,
         job.fileName,
         acceptedClips,

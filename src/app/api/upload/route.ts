@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 import fs from 'fs';
+import { pipeline } from 'stream/promises';
+import { Readable } from 'stream';
 import { UPLOADS_DIR, ensureDirs, createJob } from '@/lib/video/constants';
 import type { Job } from '@/lib/types';
 
@@ -33,10 +35,10 @@ export async function POST(request: NextRequest) {
       const fileName = `${jobId}${ext}`;
       const filePath = path.join(UPLOADS_DIR, fileName);
 
-      // Save file to disk
-      const arrayBuffer = await file.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      fs.writeFileSync(filePath, buffer);
+      // Save file to disk via stream (avoids loading whole file into memory)
+      const writeStream = fs.createWriteStream(filePath);
+      const readStream = Readable.fromWeb(file.stream() as unknown as import('stream/web').ReadableStream);
+      await pipeline(readStream, writeStream);
 
       // Create job record
       const job: Job = {
